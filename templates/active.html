@@ -25,7 +25,7 @@
       <ul class="task-list">
         {% for task in tasks %}
           <li class="task">
-            <input type="checkbox" name="completed" value="{{ task.id }}">
+            <input type="checkbox" class="task-check" name="completed" value="{{ task.id }}">
             <span class="title">{{ task.title }}</span>
             {% if task.recurrence %}
               <span class="recur-tag">&#8635; {{ task.recurrence }}</span>

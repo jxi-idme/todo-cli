@@ -133,6 +133,39 @@ button:hover {
   flex: 1;
 }
 
+/* Stylized circular checkbox: white border, light-grey center,
+   turns green when checked. Keeps the native checkbox behavior. */
+.task-check {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  aspect-ratio: 1 / 1;   /* guarantee a perfect circle regardless of layout */
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background-color: #3a3f4a;   /* darker grey that pairs with the dark bg */
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.task-check:checked {
+  background-color: #3fae5a;
+}
+
+.task-check:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Keep the white border white even on focus (overrides the generic
+   input:focus rule that would tint it amber after a click). */
+.task-check:focus {
+  border-color: #ffffff;
+}
+
 .badge {
   font-size: 0.8rem;
   color: var(--muted);
