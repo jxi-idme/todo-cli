@@ -1,0 +1,18 @@
+{# Shared Jinja macros used by more than one template. #}
+
+{# Build the ?tags= URL for a chip that TOGGLES `name`: if it's currently
+   selected, remove it; otherwise add it. Pure server-side -- no JS needed.
+   `endpoint` is the route to link to ('index' or 'archive') so the same chip
+   UI can drive the filter on whichever page renders it.
+   We pass the joined names through url_for so Flask percent-encodes the query
+   value (tag names may contain spaces, &, etc. and must not be put in the URL
+   raw). #}
+{% macro toggle_url(name, selected, endpoint) -%}
+  {%- set remaining = selected | reject('equalto', name) | list -%}
+  {%- if name in selected -%}
+    {%- set names = remaining -%}
+  {%- else -%}
+    {%- set names = selected + [name] -%}
+  {%- endif -%}
+  {%- if names -%}{{ url_for(endpoint, tags=names | join(',')) }}{%- else -%}{{ url_for(endpoint) }}{%- endif -%}
+{%- endmacro %}

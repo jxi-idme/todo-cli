@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <h2>Manage tags</h2>
+
+  {% if all_tags %}
+    <ul class="task-list tag-manage-list">
+      {% for name, color in all_tags.items() %}
+        <li class="task">
+          {# One form per tag: edit its color and save. The preview group
+             gives a live sample as you change the color (see base.html). #}
+          <form class="tag-manage-form tag-preview-group" method="post"
+                action="{{ url_for('tags_post') }}">
+            <input type="hidden" name="name" value="{{ name }}">
+            <span class="tag-chip tag-preview title-highlight"
+                  style="--tag-bg: {{ color }};">{{ name }}</span>
+            <input type="color" name="color" class="tag-color-input"
+                   value="{{ color }}">
+            <button type="submit">Save</button>
+          </form>
+          {# Delete lives in its OWN little form so clicking it doesn't submit
+             the color-edit form above (mirrors the task delete-button pattern). #}
+          <button form="delete-tag-{{ loop.index }}" type="submit"
+                  class="delete">x</button>
+          <form id="delete-tag-{{ loop.index }}" method="post"
+                action="{{ url_for('tag_delete', name=name) }}"></form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">No tags yet. Add tags when you create or edit a task.</p>
+  {% endif %}
+
+  <p><a class="back-link" href="{{ url_for('index') }}">&larr; Back to active</a></p>
+{% endblock %}

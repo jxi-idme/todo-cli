@@ -13,13 +13,28 @@ datetime.now() as the reference clock, and ISO 8601 strings for storage.
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timedelta
 
 
 def _empty():
     """A fresh, empty store."""
-    return {"active": [], "archive": [], "expired": []}
+    # "tags" is the tag registry: a dict mapping tag name -> hex color.
+    return {"active": [], "archive": [], "expired": [], "tags": {}}
+
+
+# Neutral grey used for any tag that somehow isn't in the registry.
+DEFAULT_TAG_COLOR = "#8a8f99"
+
+# A valid hex color: #rgb or #rrggbb (case-insensitive).
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+# Allowlist for tag names (after they've been stripped + lowercased). Only
+# lowercase letters, digits, spaces, underscores and hyphens are allowed. This
+# makes the "tag names can never carry HTML/JS/CSS" invariant explicit instead
+# of relying solely on Jinja auto-escaping downstream.
+_TAG_NAME_RE = re.compile(r"^[a-z0-9 _-]+$")
 
 
 # Recurrence values we accept. "every:N" (N a positive int) is handled
@@ -40,6 +55,110 @@ def _valid_recurrence(recurrence):
         except ValueError:
             return False
     return False
+
+
+# --------------------------------------------------------------------------- #
+# Tags
+# --------------------------------------------------------------------------- #
+
+def _normalize_tags(tags):
+    """Normalize a list of tag names: strip whitespace, lowercase, drop
+    blanks, and de-duplicate while preserving first-seen order.
+    """
+    out = []
+    for raw in tags or []:
+        # Tolerate a hand-edited JSON file that put non-strings in the list
+        # (e.g. "tags": [1, null]) -- just skip anything that isn't a string.
+        if not isinstance(raw, str):
+            continue
+        name = raw.strip().lower()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def set_tag_color(data, name, color):
+    """Create or update a tag's color in the registry.
+
+    The tag name is normalized for consistency: stripped of surrounding
+    whitespace and lowercased (so "Work", "work " and "WORK" are one tag). It
+    must then match the allowlist `^[a-z0-9 _-]+$` -- this rejects HTML/JS/CSS
+    metacharacters (<, >, ;, {, quotes, &, ...) so a tag name can never carry
+    an injection payload, independent of template escaping.
+    `color` must be a valid hex string -- #rgb or #rrggbb. Raises ValueError
+    on an empty/disallowed name or an invalid color. Returns `data`.
+    """
+    name = (name or "").strip().lower()
+    if not name:
+        raise ValueError("Tag name must not be empty")
+    if not _TAG_NAME_RE.match(name):
+        raise ValueError(f"Invalid tag name: {name!r}")
+    if not isinstance(color, str) or not _HEX_COLOR_RE.match(color):
+        raise ValueError(f"Invalid hex color: {color!r}")
+    data.setdefault("tags", {})[name] = color
+    return data
+
+
+def tag_color(data, name):
+    """Return the registered hex color for `name`, or a neutral grey default
+    if the tag isn't in the registry.
+    """
+    name = (name or "").strip().lower()
+    return data.get("tags", {}).get(name, DEFAULT_TAG_COLOR)
+
+
+def delete_tag(data, name):
+    """Remove a tag everywhere it appears.
+
+    The name is normalized (stripped + lowercased, same as elsewhere). The tag
+    is removed from the `data["tags"]` registry AND from the `tags` list of
+    every task across the `active`, `archive` and `expired` lists. A name that
+    isn't registered is a safe no-op. Returns `data`.
+    """
+    name = (name or "").strip().lower()
+    # Drop it from the registry (pop with a default = no KeyError if absent).
+    data.get("tags", {}).pop(name, None)
+    # Scrub it from every task's own tag list, in all three buckets.
+    for bucket in ("active", "archive", "expired"):
+        for task in data.get(bucket, []):
+            tags = task.get("tags")
+            if isinstance(tags, list) and name in tags:
+                task["tags"] = [t for t in tags if t != name]
+    return data
+
+
+def filter_by_tags(tasks, selected_tags):
+    """Return tasks that have AT LEAST ONE of `selected_tags` (OR / union
+    semantics). If `selected_tags` is empty, all tasks are returned unchanged.
+    A task with no tags is excluded whenever a filter is active.
+    """
+    selected = set(_normalize_tags(selected_tags))
+    if not selected:
+        return tasks
+    return [t for t in tasks if selected & set(t.get("tags") or [])]
+
+
+def _srgb_to_linear(channel):
+    """Gamma-expand one sRGB channel (0..1) to linear light, per WCAG."""
+    return channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+
+
+def text_color_for(bg_hex):
+    """Return "#000000" or "#ffffff" -- whichever stays readable on the given
+    background color -- using WCAG relative luminance.
+
+    Accepts #rgb or #rrggbb. We gamma-expand the sRGB channels to linear light
+    first (a plain weighted average of the raw channels overstates how bright a
+    color looks), then compare the relative luminance against ~0.179 -- the
+    crossover where black vs white text give equal WCAG contrast. Brighter than
+    that gets black text; darker gets white.
+    """
+    h = bg_hex.lstrip("#")
+    if len(h) == 3:                      # expand #rgb -> #rrggbb
+        h = "".join(c * 2 for c in h)
+    r, g, b = (_srgb_to_linear(int(h[i:i + 2], 16) / 255) for i in (0, 2, 4))
+    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return "#000000" if luminance > 0.179 else "#ffffff"
 
 
 # --------------------------------------------------------------------------- #
@@ -75,6 +194,15 @@ def load(path):
         # default it to [] and migrate gracefully.
         if not isinstance(parsed.get("expired"), list):
             parsed["expired"] = []
+        # Same for the tag registry: a store predating tags has no "tags"
+        # key (or a wrong type). Default it to {} -- NOT corruption.
+        if not isinstance(parsed.get("tags"), dict):
+            parsed["tags"] = {}
+        # And any task missing its own "tags" list gets an empty list.
+        for bucket in ("active", "archive", "expired"):
+            for task in parsed[bucket]:
+                if not isinstance(task.get("tags"), list):
+                    task["tags"] = []
         return parsed
     _backup(path)
     return _empty()
@@ -240,7 +368,7 @@ def _advance_until_future(due_iso, recurrence, now):
 # Task operations
 # --------------------------------------------------------------------------- #
 
-def add_task(data, title, due=None, recurrence=None, now=None):
+def add_task(data, title, due=None, recurrence=None, now=None, tags=None):
     """Add a new active task.
 
     Raises ValueError on an empty/whitespace title, on a non-empty `due`
@@ -249,6 +377,10 @@ def add_task(data, title, due=None, recurrence=None, now=None):
 
     Recurrence requires a due date (a repeating task with no due date makes
     no sense). If a recurrence is given without a due date we raise ValueError.
+
+    `tags` is an optional list of tag names. They're normalized (stripped,
+    lowercased, blanks dropped, de-duplicated preserving order) and stored on
+    the task. Tags need not exist in the registry at this level.
     """
     title = (title or "").strip()
     if not title:
@@ -266,17 +398,19 @@ def add_task(data, title, due=None, recurrence=None, now=None):
         "due": due or None,
         "recurrence": recurrence or None,
         "created": now.isoformat(),
+        "tags": _normalize_tags(tags),
     }
     data["active"].append(task)
     return data
 
 
-def edit_task(data, task_id, title, due=None, recurrence=None):
+def edit_task(data, task_id, title, due=None, recurrence=None, tags=None):
     """Update an existing active task in place.
 
     Applies the same validation rules as add_task (non-empty title,
     parseable due, valid recurrence, recurrence requires a due date).
-    Raises ValueError on bad input. An unknown id is a safe no-op.
+    `tags` is normalized the same way as in add_task. Raises ValueError on
+    bad input. An unknown id is a safe no-op.
     """
     title = (title or "").strip()
     if not title:
@@ -293,6 +427,7 @@ def edit_task(data, task_id, title, due=None, recurrence=None):
             task["title"] = title
             task["due"] = due or None
             task["recurrence"] = recurrence or None
+            task["tags"] = _normalize_tags(tags)
             break
     return data
 
@@ -343,6 +478,7 @@ def _spawn_next(task, due_iso, now):
         "due": due_iso,
         "recurrence": task.get("recurrence"),
         "created": now.isoformat(),
+        "tags": list(task.get("tags") or []),
     }
 
 

@@ -231,7 +231,7 @@ def test_save_and_load_roundtrip(tmp_path):
 def test_load_missing_file_returns_default(tmp_path):
     path = tmp_path / "nope.json"
     loaded = todo.load(str(path))
-    assert loaded == {"active": [], "archive": [], "expired": []}
+    assert loaded == {"active": [], "archive": [], "expired": [], "tags": {}}
 
 
 def test_load_corrupt_file_returns_default_and_backs_up(tmp_path):
@@ -239,7 +239,7 @@ def test_load_corrupt_file_returns_default_and_backs_up(tmp_path):
     path.write_text("{not valid json", encoding="utf-8")
 
     loaded = todo.load(str(path))
-    assert loaded == {"active": [], "archive": [], "expired": []}
+    assert loaded == {"active": [], "archive": [], "expired": [], "tags": {}}
     # The corrupt file should have been backed up.
     bak = tmp_path / "tasks.json.bak"
     assert bak.exists()
@@ -252,7 +252,7 @@ def test_load_wrong_shape_returns_default_and_backs_up(tmp_path):
     path.write_text('{"active": []}', encoding="utf-8")   # missing "archive"
 
     loaded = todo.load(str(path))
-    assert loaded == {"active": [], "archive": [], "expired": []}
+    assert loaded == {"active": [], "archive": [], "expired": [], "tags": {}}
     bak = tmp_path / "tasks.json.bak"
     assert bak.exists()
     assert bak.read_text(encoding="utf-8") == '{"active": []}'
@@ -264,7 +264,7 @@ def test_load_json_list_returns_default_and_backs_up(tmp_path):
     path.write_text("[]", encoding="utf-8")
 
     loaded = todo.load(str(path))
-    assert loaded == {"active": [], "archive": [], "expired": []}
+    assert loaded == {"active": [], "archive": [], "expired": [], "tags": {}}
     bak = tmp_path / "tasks.json.bak"
     assert bak.exists()
 
@@ -556,3 +556,295 @@ def test_refresh_future_recurring_left_alone():
     assert len(data["active"]) == 1
     assert data["active"][0]["id"] == tid
     assert data["expired"] == []
+
+
+# --------------------------------------------------------------------------- #
+# Tags -- registry / colors (set_tag_color, tag_color)
+# --------------------------------------------------------------------------- #
+
+def test_set_tag_color_creates_entry():
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    assert data["tags"]["work"] == "#e0a955"
+
+
+def test_set_tag_color_updates_existing():
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    todo.set_tag_color(data, "work", "#123456")
+    assert data["tags"]["work"] == "#123456"
+
+
+def test_set_tag_color_normalizes_name():
+    # Names are stripped and lowercased for consistency.
+    data = todo._empty()
+    todo.set_tag_color(data, "  WORK ", "#e0a955")
+    assert "work" in data["tags"]
+    assert "  WORK " not in data["tags"]
+
+
+def test_set_tag_color_accepts_short_hex():
+    data = todo._empty()
+    todo.set_tag_color(data, "tag", "#abc")
+    assert data["tags"]["tag"] == "#abc"
+
+
+def test_set_tag_color_empty_name_rejected():
+    data = todo._empty()
+    with pytest.raises(ValueError):
+        todo.set_tag_color(data, "   ", "#e0a955")
+    assert data["tags"] == {}
+
+
+def test_set_tag_color_bad_color_rejected():
+    data = todo._empty()
+    with pytest.raises(ValueError):
+        todo.set_tag_color(data, "work", "red")
+    with pytest.raises(ValueError):
+        todo.set_tag_color(data, "work", "#xyz")
+    with pytest.raises(ValueError):
+        todo.set_tag_color(data, "work", "#12")     # wrong length
+    assert data["tags"] == {}
+
+
+def test_set_tag_color_accepts_allowed_names():
+    # Names made of lowercase letters, digits, spaces, underscores and
+    # hyphens are allowed.
+    data = todo._empty()
+    for name in ["work", "work item", "high-priority", "q1_2026", "a1 b2"]:
+        todo.set_tag_color(data, name, "#abc")
+        assert name in data["tags"]
+
+
+def test_set_tag_color_rejects_injection_chars():
+    # Anything outside the allowlist (e.g. HTML/JS/CSS metacharacters) is
+    # rejected so the no-injection invariant is explicit, not just relying
+    # on Jinja escaping.
+    data = todo._empty()
+    for bad in ["<script>", "a;b", "a{b}", 'a"b', "a'b", "a&b", "tag<", "naïve"]:
+        with pytest.raises(ValueError):
+            todo.set_tag_color(data, bad, "#abc")
+    assert data["tags"] == {}
+
+
+def test_tag_color_registered():
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    assert todo.tag_color(data, "work") == "#e0a955"
+
+
+def test_tag_color_unregistered_returns_default():
+    data = todo._empty()
+    # Some sensible neutral grey default for an unknown tag.
+    assert todo.tag_color(data, "ghost") == todo.DEFAULT_TAG_COLOR
+
+
+# --------------------------------------------------------------------------- #
+# Tags -- delete_tag
+# --------------------------------------------------------------------------- #
+
+def test_delete_tag_removes_from_registry():
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    todo.delete_tag(data, "work")
+    assert "work" not in data["tags"]
+
+
+def test_delete_tag_removes_from_tasks_across_all_lists():
+    # A tag attached to tasks in active, archive AND expired is scrubbed from
+    # every one of them when the tag is deleted.
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    data["active"].append({"id": "a", "title": "A", "due": None,
+                           "created": "x", "tags": ["work"]})
+    data["archive"].append({"id": "b", "title": "B", "due": None,
+                            "created": "x", "tags": ["work"]})
+    data["expired"].append({"id": "c", "title": "C", "due": None,
+                            "created": "x", "tags": ["work"]})
+
+    todo.delete_tag(data, "work")
+
+    assert data["active"][0]["tags"] == []
+    assert data["archive"][0]["tags"] == []
+    assert data["expired"][0]["tags"] == []
+
+
+def test_delete_tag_unknown_name_is_noop():
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    todo.delete_tag(data, "ghost")   # not in registry
+    assert data["tags"] == {"work": "#e0a955"}
+
+
+def test_delete_tag_preserves_other_tags_on_task():
+    # Deleting one tag must leave a task's OTHER tags intact.
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    todo.set_tag_color(data, "home", "#3fae5a")
+    data["active"].append({"id": "a", "title": "A", "due": None,
+                           "created": "x", "tags": ["work", "home"]})
+
+    todo.delete_tag(data, "work")
+
+    assert data["active"][0]["tags"] == ["home"]
+
+
+def test_delete_tag_normalizes_name():
+    # The name is stripped + lowercased like elsewhere.
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    data["active"].append({"id": "a", "title": "A", "due": None,
+                           "created": "x", "tags": ["work"]})
+    todo.delete_tag(data, "  WORK ")
+    assert "work" not in data["tags"]
+    assert data["active"][0]["tags"] == []
+
+
+def test_delete_tag_returns_data():
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#e0a955")
+    assert todo.delete_tag(data, "work") is data
+
+
+# --------------------------------------------------------------------------- #
+# Tags -- add_task / edit_task normalization
+# --------------------------------------------------------------------------- #
+
+def test_add_task_default_tags_empty():
+    data = todo._empty()
+    todo.add_task(data, "No tags")
+    assert data["active"][0]["tags"] == []
+
+
+def test_add_task_stores_tags_normalized():
+    data = todo._empty()
+    todo.add_task(data, "Tagged", tags=["  Work ", "URGENT"])
+    assert data["active"][0]["tags"] == ["work", "urgent"]
+
+
+def test_add_task_tags_dedup_and_drop_blanks():
+    data = todo._empty()
+    todo.add_task(data, "Tagged", tags=["work", "", "  ", "Work", "urgent", "work"])
+    # Blanks dropped, de-duplicated, order preserved.
+    assert data["active"][0]["tags"] == ["work", "urgent"]
+
+
+def test_edit_task_updates_tags():
+    data = todo._empty()
+    todo.add_task(data, "Task", tags=["old"])
+    tid = data["active"][0]["id"]
+    todo.edit_task(data, tid, "Task", tags=["New", "new", "  shiny  "])
+    assert data["active"][0]["tags"] == ["new", "shiny"]
+
+
+def test_edit_task_default_tags_empty():
+    data = todo._empty()
+    todo.add_task(data, "Task", tags=["old"])
+    tid = data["active"][0]["id"]
+    todo.edit_task(data, tid, "Task")   # no tags -> cleared to []
+    assert data["active"][0]["tags"] == []
+
+
+def test_normalize_tags_skips_non_string_elements():
+    # A hand-edited JSON file might leave non-strings in a tags list
+    # (e.g. "tags": [1, null]); we skip them instead of crashing.
+    assert todo._normalize_tags(["work", 1, None, "home", True]) == ["work", "home"]
+    assert todo._normalize_tags([1, None]) == []
+
+
+# --------------------------------------------------------------------------- #
+# Tags -- filter_by_tags (OR / union semantics)
+# --------------------------------------------------------------------------- #
+
+def _tagged(title, tags):
+    return {"id": title, "title": title, "due": None, "created": "x", "tags": tags}
+
+
+def test_filter_by_tags_empty_selection_returns_all():
+    tasks = [_tagged("a", ["work"]), _tagged("b", [])]
+    assert todo.filter_by_tags(tasks, []) == tasks
+
+
+def test_filter_by_tags_single_tag():
+    tasks = [_tagged("a", ["work"]), _tagged("b", ["home"])]
+    result = todo.filter_by_tags(tasks, ["work"])
+    assert [t["title"] for t in result] == ["a"]
+
+
+def test_filter_by_tags_union_multiple():
+    tasks = [
+        _tagged("a", ["work"]),
+        _tagged("b", ["home"]),
+        _tagged("c", ["errand"]),
+    ]
+    # OR semantics: a task matches if it has ANY of the selected tags.
+    result = todo.filter_by_tags(tasks, ["work", "home"])
+    assert [t["title"] for t in result] == ["a", "b"]
+
+
+def test_filter_by_tags_no_tag_task_excluded_under_filter():
+    tasks = [_tagged("a", ["work"]), _tagged("b", [])]
+    result = todo.filter_by_tags(tasks, ["work"])
+    assert [t["title"] for t in result] == ["a"]
+
+
+def test_filter_by_tags_handles_missing_tags_field():
+    # A task without a "tags" key is treated as having no tags.
+    tasks = [{"id": "x", "title": "x", "due": None, "created": "x"}]
+    assert todo.filter_by_tags(tasks, ["work"]) == []
+
+
+# --------------------------------------------------------------------------- #
+# Tags -- text_color_for (readable text over a colored background)
+# --------------------------------------------------------------------------- #
+
+def test_text_color_for_light_bg_is_black():
+    assert todo.text_color_for("#ffffff") == "#000000"
+    assert todo.text_color_for("#e0a955") == "#000000"   # default amber
+    assert todo.text_color_for("#3fae5a") == "#000000"   # mid green
+
+
+def test_text_color_for_dark_bg_is_white():
+    assert todo.text_color_for("#000000") == "#ffffff"
+    assert todo.text_color_for("#14161a") == "#ffffff"   # near-black panel
+    assert todo.text_color_for("#2b5cb8") == "#ffffff"   # deep blue
+
+
+def test_text_color_for_short_hex():
+    assert todo.text_color_for("#fff") == "#000000"
+    assert todo.text_color_for("#000") == "#ffffff"
+
+
+# --------------------------------------------------------------------------- #
+# Tags -- load backward compatibility
+# --------------------------------------------------------------------------- #
+
+def test_empty_includes_tags_registry():
+    assert todo._empty()["tags"] == {}
+
+
+def test_load_missing_tags_registry_migrates_not_corrupt(tmp_path):
+    # A store with active/archive/expired but NO "tags" key must migrate to {}
+    # and NOT be treated as corrupt (no backup).
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        '{"active": [{"id": "a", "title": "Old", "due": null, '
+        '"created": "x"}], "archive": [], "expired": []}',
+        encoding="utf-8",
+    )
+    loaded = todo.load(str(path))
+    assert loaded["tags"] == {}                    # defaulted in
+    # Task missing its own "tags" field is defaulted to [].
+    assert loaded["active"][0]["tags"] == []
+    assert not (tmp_path / "tasks.json.bak").exists()
+
+
+def test_load_tags_wrong_type_migrates(tmp_path):
+    # "tags" present but not a dict -> treated as missing, defaulted to {}.
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        '{"active": [], "archive": [], "tags": "oops"}', encoding="utf-8"
+    )
+    loaded = todo.load(str(path))
+    assert loaded["tags"] == {}
+    assert not (tmp_path / "tasks.json.bak").exists()
