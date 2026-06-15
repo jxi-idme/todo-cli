@@ -96,3 +96,77 @@ def test_is_registered_tag():
     assert journal.is_registered_tag(data, s["id"], "maya") is True
     assert journal.is_registered_tag(data, s["id"], "MAYA") is True   # normalized
     assert journal.is_registered_tag(data, s["id"], "ghost") is False
+
+
+# --------------------------------------------------------------------------- #
+# Task 3: Section CRUD with validation
+# --------------------------------------------------------------------------- #
+
+def test_add_section_validates_and_assigns_id():
+    data = journal._empty()
+    s = journal.add_section(data, "  People ", "tag", "#e0a955")
+    assert s["name"] == "people"           # normalized
+    assert s["type"] == "tag" and s["archived"] is False
+    assert len(s["id"]) == 32              # uuid4 hex
+    assert journal.active_sections(data) == [s]
+
+
+def test_add_numeric_section_keeps_unit():
+    data = journal._empty()
+    s = journal.add_section(data, "sleep", "numeric", "#6fa8dc", unit="hrs")
+    assert s["type"] == "numeric" and s["unit"] == "hrs"
+
+
+def test_add_section_rejects_bad_name():
+    data = journal._empty()
+    for bad in ["", "   ", "no<script>", "a;b"]:
+        with pytest.raises(ValueError):
+            journal.add_section(data, bad, "tag", "#fff")
+
+
+def test_add_section_rejects_bad_type_and_color():
+    data = journal._empty()
+    with pytest.raises(ValueError):
+        journal.add_section(data, "x", "bogus", "#fff")
+    with pytest.raises(ValueError):
+        journal.add_section(data, "x", "tag", "not-a-color")
+
+
+def test_add_section_rejects_duplicate_active_name():
+    data = journal._empty()
+    journal.add_section(data, "people", "tag", "#fff")
+    with pytest.raises(ValueError):
+        journal.add_section(data, "PEOPLE", "tag", "#000")
+
+
+def test_rename_section():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.rename_section(data, s["id"], "friends")
+    assert journal.section_by_id(data, s["id"])["name"] == "friends"
+
+
+def test_rename_rejects_duplicate():
+    data = journal._empty()
+    journal.add_section(data, "people", "tag", "#fff")
+    s2 = journal.add_section(data, "work", "tag", "#000")
+    with pytest.raises(ValueError):
+        journal.rename_section(data, s2["id"], "people")
+
+
+def test_set_color_and_unit():
+    data = journal._empty()
+    s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    journal.set_section_color(data, s["id"], "#123456")
+    journal.set_section_unit(data, s["id"], "minutes here")  # capped to 12
+    s2 = journal.section_by_id(data, s["id"])
+    assert s2["color"] == "#123456"
+    assert s2["unit"] == "minutes here"[:12]
+
+
+def test_archive_section_soft_deletes():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.archive_section(data, s["id"])
+    assert journal.section_by_id(data, s["id"])["archived"] is True
+    assert journal.active_sections(data) == []

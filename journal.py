@@ -103,20 +103,6 @@ def save(path, data):
     os.replace(tmp, path)
 
 
-def add_section(data, name, type_, color, unit=None):
-    section = {
-        "id": uuid.uuid4().hex,
-        "name": (name or "").strip().lower(),
-        "type": type_,
-        "color": color,
-        "tags": [],
-        "unit": ((unit or "").strip()[:_MAX_UNIT_LEN] or None) if type_ == "numeric" else None,
-        "archived": False,
-    }
-    data.setdefault("sections", []).append(section)
-    return section
-
-
 # --------------------------------------------------------------------------- #
 # Task 2: Section lookup & display helpers
 # --------------------------------------------------------------------------- #
@@ -149,3 +135,79 @@ def is_registered_tag(data, section_id, tag):
     """True if `tag` is in the section's permanent tag list (normalized)."""
     s = section_by_id(data, section_id)
     return bool(s) and _normalize_name(tag) in (s.get("tags") or [])
+
+
+# --------------------------------------------------------------------------- #
+# Task 3: Section CRUD with validation
+# --------------------------------------------------------------------------- #
+
+def _valid_name(name):
+    return bool(name) and bool(_TAG_NAME_RE.match(name))
+
+
+def add_section(data, name, type_, color, unit=None):
+    """Create a section. Validates name (allowlist), type, and hex color.
+    Names must be unique among non-archived sections. Returns the new section.
+    """
+    name = _normalize_name(name)
+    if not _valid_name(name):
+        raise ValueError(f"Invalid section name: {name!r}")
+    if type_ not in ("tag", "numeric"):
+        raise ValueError(f"Invalid section type: {type_!r}")
+    if not isinstance(color, str) or not _HEX_COLOR_RE.match(color):
+        raise ValueError(f"Invalid hex color: {color!r}")
+    for s in active_sections(data):
+        if s["name"] == name:
+            raise ValueError(f"Section already exists: {name!r}")
+    section = {
+        "id": uuid.uuid4().hex,
+        "name": name,
+        "type": type_,
+        "color": color,
+        "tags": [],
+        "unit": ((unit or "").strip()[:_MAX_UNIT_LEN] or None) if type_ == "numeric" else None,
+        "archived": False,
+    }
+    data.setdefault("sections", []).append(section)
+    return section
+
+
+def rename_section(data, section_id, new_name):
+    """Rename a section (unknown id = no-op). New name validated and unique
+    among non-archived sections."""
+    new_name = _normalize_name(new_name)
+    if not _valid_name(new_name):
+        raise ValueError(f"Invalid section name: {new_name!r}")
+    for s in active_sections(data):
+        if s["name"] == new_name and s["id"] != section_id:
+            raise ValueError(f"Section already exists: {new_name!r}")
+    target = section_by_id(data, section_id)
+    if target is not None:
+        target["name"] = new_name
+    return data
+
+
+def set_section_color(data, section_id, color):
+    """Update a section's color (validated hex). Unknown id = no-op."""
+    if not isinstance(color, str) or not _HEX_COLOR_RE.match(color):
+        raise ValueError(f"Invalid hex color: {color!r}")
+    s = section_by_id(data, section_id)
+    if s is not None:
+        s["color"] = color
+    return data
+
+
+def set_section_unit(data, section_id, unit):
+    """Set a section's unit label (stripped, capped). Unknown id = no-op."""
+    s = section_by_id(data, section_id)
+    if s is not None:
+        s["unit"] = (unit or "").strip()[:_MAX_UNIT_LEN] or None
+    return data
+
+
+def archive_section(data, section_id):
+    """Soft-delete a section (kept for history/analytics). Unknown id = no-op."""
+    s = section_by_id(data, section_id)
+    if s is not None:
+        s["archived"] = True
+    return data
