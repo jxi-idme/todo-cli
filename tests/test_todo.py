@@ -1,0 +1,558 @@
+"""Tests for the pure core logic in todo.py.
+
+We use a fixed `now` everywhere so date math is deterministic, and pytest's
+`tmp_path` fixture for anything that touches the filesystem.
+"""
+
+import json
+from datetime import datetime, timedelta
+
+import pytest
+
+import todo
+
+
+# A fixed "current time" used as the reference point in all date tests.
+NOW = datetime(2026, 6, 15, 12, 0, 0)
+
+
+# --------------------------------------------------------------------------- #
+# time_remaining
+# --------------------------------------------------------------------------- #
+
+def test_time_remaining_no_due():
+    assert todo.time_remaining(None, now=NOW) == ""
+    assert todo.time_remaining("", now=NOW) == ""
+
+
+def test_time_remaining_more_than_one_day():
+    due = (NOW + timedelta(days=3, hours=2)).isoformat()
+    assert todo.time_remaining(due, now=NOW) == "3 day(s) left"
+
+
+def test_time_remaining_less_than_day_more_than_hour():
+    due = (NOW + timedelta(hours=5)).isoformat()
+    assert todo.time_remaining(due, now=NOW) == "5 hour(s) left"
+
+
+def test_time_remaining_less_than_hour():
+    due = (NOW + timedelta(minutes=30)).isoformat()
+    assert todo.time_remaining(due, now=NOW) == "due soon"
+
+
+def test_time_remaining_overdue_days():
+    due = (NOW - timedelta(days=2, hours=1)).isoformat()
+    assert todo.time_remaining(due, now=NOW) == "overdue by 2 day(s)"
+
+
+def test_time_remaining_overdue_hours():
+    due = (NOW - timedelta(hours=5)).isoformat()
+    assert todo.time_remaining(due, now=NOW) == "overdue by 5 hour(s)"
+
+
+def test_time_remaining_overdue_minutes_says_overdue():
+    # Less than an hour past due should NOT say "overdue by 0 hour(s)".
+    due = (NOW - timedelta(minutes=30)).isoformat()
+    assert todo.time_remaining(due, now=NOW) == "overdue"
+
+
+def test_time_remaining_exactly_due_is_overdue():
+    # The instant it passes (delta == 0) we treat it as overdue, with the
+    # bare word "overdue" (under-an-hour tier), never "overdue by 0 hour(s)".
+    due = NOW.isoformat()
+    assert todo.time_remaining(due, now=NOW) == "overdue"
+
+
+def test_time_remaining_one_hour_boundary_forward():
+    # Exactly 3600 seconds in the future -> "1 hour(s) left".
+    due = (NOW + timedelta(hours=1)).isoformat()
+    assert todo.time_remaining(due, now=NOW) == "1 hour(s) left"
+
+
+# --------------------------------------------------------------------------- #
+# is_overdue
+# --------------------------------------------------------------------------- #
+
+def test_is_overdue_true():
+    due = (NOW - timedelta(hours=1)).isoformat()
+    assert todo.is_overdue(due, now=NOW) is True
+
+
+def test_is_overdue_false_future():
+    due = (NOW + timedelta(hours=1)).isoformat()
+    assert todo.is_overdue(due, now=NOW) is False
+
+
+def test_is_overdue_false_no_due():
+    assert todo.is_overdue(None, now=NOW) is False
+    assert todo.is_overdue("", now=NOW) is False
+
+
+# --------------------------------------------------------------------------- #
+# add_task
+# --------------------------------------------------------------------------- #
+
+def test_add_task_appends_and_generates_id():
+    data = {"active": [], "archive": []}
+    todo.add_task(data, "Buy milk")
+    assert len(data["active"]) == 1
+    task = data["active"][0]
+    assert task["title"] == "Buy milk"
+    assert task["id"]          # non-empty id generated
+    assert len(task["id"]) == 32   # uuid4 hex
+    assert task["due"] is None
+    assert task["created"]     # created timestamp stored
+
+
+def test_add_task_stores_due():
+    data = {"active": [], "archive": []}
+    todo.add_task(data, "Pay rent", due="2026-07-01T00:00:00")
+    assert data["active"][0]["due"] == "2026-07-01T00:00:00"
+
+
+def test_add_task_uses_injected_now_for_created():
+    data = {"active": [], "archive": []}
+    todo.add_task(data, "Stamped", now=NOW)
+    assert data["active"][0]["created"] == NOW.isoformat()
+
+
+def test_add_task_bad_due_rejected():
+    data = {"active": [], "archive": []}
+    with pytest.raises(ValueError):
+        todo.add_task(data, "Bad date", due="not-a-date")
+    assert data["active"] == []   # nothing added
+
+
+def test_add_task_empty_title_rejected():
+    data = {"active": [], "archive": []}
+    with pytest.raises(ValueError):
+        todo.add_task(data, "")
+    with pytest.raises(ValueError):
+        todo.add_task(data, "   ")
+    assert data["active"] == []   # nothing added
+
+
+# --------------------------------------------------------------------------- #
+# delete_task
+# --------------------------------------------------------------------------- #
+
+def test_delete_task_removes_from_active():
+    data = {"active": [], "archive": []}
+    todo.add_task(data, "Task A")
+    task_id = data["active"][0]["id"]
+    todo.delete_task(data, task_id)
+    assert data["active"] == []
+
+
+def test_delete_task_removes_from_archive():
+    data = {
+        "active": [],
+        "archive": [{"id": "abc", "title": "Old", "due": None,
+                     "created": "x", "completed": "y"}],
+    }
+    todo.delete_task(data, "abc")
+    assert data["archive"] == []
+
+
+def test_delete_task_unknown_id_noop():
+    data = {"active": [], "archive": []}
+    todo.add_task(data, "Keep me")
+    todo.delete_task(data, "does-not-exist")
+    assert len(data["active"]) == 1
+
+
+# --------------------------------------------------------------------------- #
+# refresh
+# --------------------------------------------------------------------------- #
+
+def test_refresh_moves_checked_to_archive():
+    data = {"active": [], "archive": []}
+    todo.add_task(data, "Done one")
+    todo.add_task(data, "Still active")
+    done_id = data["active"][0]["id"]
+
+    todo.refresh(data, [done_id], now=NOW)
+
+    assert len(data["active"]) == 1
+    assert data["active"][0]["title"] == "Still active"
+    assert len(data["archive"]) == 1
+    archived = data["archive"][0]
+    assert archived["title"] == "Done one"
+    assert archived["completed"] == NOW.isoformat()
+
+
+def test_refresh_sorts_remaining_active():
+    data = {"active": [], "archive": []}
+    # soonest due
+    todo.add_task(data, "Soon", due=(NOW + timedelta(hours=2)).isoformat())
+    # later due
+    todo.add_task(data, "Later", due=(NOW + timedelta(days=5)).isoformat())
+    todo.refresh(data, [], now=NOW)
+    titles = [t["title"] for t in data["active"]]
+    assert titles == ["Soon", "Later"]
+
+
+# --------------------------------------------------------------------------- #
+# sort_active
+# --------------------------------------------------------------------------- #
+
+def test_sort_active_ordering():
+    tasks = [
+        {"id": "1", "title": "no_due", "due": None, "created": "x"},
+        {"id": "2", "title": "soon",
+         "due": (NOW + timedelta(hours=2)).isoformat(), "created": "x"},
+        {"id": "3", "title": "very_overdue",
+         "due": (NOW - timedelta(days=3)).isoformat(), "created": "x"},
+        {"id": "4", "title": "later",
+         "due": (NOW + timedelta(days=10)).isoformat(), "created": "x"},
+        {"id": "5", "title": "slightly_overdue",
+         "due": (NOW - timedelta(hours=1)).isoformat(), "created": "x"},
+    ]
+    result = todo.sort_active(tasks, now=NOW)
+    titles = [t["title"] for t in result]
+    # Overdue first (most overdue at top), then soonest-due, no-due last.
+    assert titles == ["very_overdue", "slightly_overdue", "soon", "later", "no_due"]
+
+
+# --------------------------------------------------------------------------- #
+# load / save
+# --------------------------------------------------------------------------- #
+
+def test_save_and_load_roundtrip(tmp_path):
+    path = tmp_path / "tasks.json"
+    data = {"active": [], "archive": []}
+    todo.add_task(data, "Persist me")
+    todo.save(str(path), data)
+
+    loaded = todo.load(str(path))
+    assert loaded["active"][0]["title"] == "Persist me"
+
+
+def test_load_missing_file_returns_default(tmp_path):
+    path = tmp_path / "nope.json"
+    loaded = todo.load(str(path))
+    assert loaded == {"active": [], "archive": [], "expired": []}
+
+
+def test_load_corrupt_file_returns_default_and_backs_up(tmp_path):
+    path = tmp_path / "tasks.json"
+    path.write_text("{not valid json", encoding="utf-8")
+
+    loaded = todo.load(str(path))
+    assert loaded == {"active": [], "archive": [], "expired": []}
+    # The corrupt file should have been backed up.
+    bak = tmp_path / "tasks.json.bak"
+    assert bak.exists()
+    assert bak.read_text(encoding="utf-8") == "{not valid json"
+
+
+def test_load_wrong_shape_returns_default_and_backs_up(tmp_path):
+    # Valid JSON, but not our {"active": [...], "archive": [...]} shape.
+    path = tmp_path / "tasks.json"
+    path.write_text('{"active": []}', encoding="utf-8")   # missing "archive"
+
+    loaded = todo.load(str(path))
+    assert loaded == {"active": [], "archive": [], "expired": []}
+    bak = tmp_path / "tasks.json.bak"
+    assert bak.exists()
+    assert bak.read_text(encoding="utf-8") == '{"active": []}'
+
+
+def test_load_json_list_returns_default_and_backs_up(tmp_path):
+    # Valid JSON of an entirely wrong type (a list, not a dict).
+    path = tmp_path / "tasks.json"
+    path.write_text("[]", encoding="utf-8")
+
+    loaded = todo.load(str(path))
+    assert loaded == {"active": [], "archive": [], "expired": []}
+    bak = tmp_path / "tasks.json.bak"
+    assert bak.exists()
+
+
+def test_save_writes_valid_json(tmp_path):
+    path = tmp_path / "tasks.json"
+    data = {"active": [], "archive": []}
+    todo.save(str(path), data)
+    # Readable as JSON directly.
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw == {"active": [], "archive": []}
+
+
+def test_load_missing_expired_key_migrates_not_corrupt(tmp_path):
+    # Old-format store: has active + archive but NO "expired" key. This must
+    # be migrated gracefully (expired -> []) and NOT treated as corrupt.
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        '{"active": [{"id": "a", "title": "Old", "due": null, '
+        '"created": "x"}], "archive": []}',
+        encoding="utf-8",
+    )
+    loaded = todo.load(str(path))
+    assert loaded["expired"] == []                 # defaulted in
+    assert loaded["active"][0]["title"] == "Old"   # original data preserved
+    # No backup should have been made -- this was a valid (older) store.
+    assert not (tmp_path / "tasks.json.bak").exists()
+
+
+def test_load_expired_wrong_type_migrates(tmp_path):
+    # "expired" present but not a list -> treated as missing, defaulted to [].
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        '{"active": [], "archive": [], "expired": "oops"}', encoding="utf-8"
+    )
+    loaded = todo.load(str(path))
+    assert loaded["expired"] == []
+    assert not (tmp_path / "tasks.json.bak").exists()
+
+
+# --------------------------------------------------------------------------- #
+# add_task -- recurrence
+# --------------------------------------------------------------------------- #
+
+def test_add_task_stores_recurrence():
+    data = todo._empty()
+    todo.add_task(data, "Daily standup",
+                  due="2026-07-01T09:00:00", recurrence="daily")
+    assert data["active"][0]["recurrence"] == "daily"
+
+
+def test_add_task_default_recurrence_is_none():
+    data = todo._empty()
+    todo.add_task(data, "One-off", due="2026-07-01T09:00:00")
+    assert data["active"][0]["recurrence"] is None
+
+
+def test_add_task_recurrence_without_due_rejected():
+    # Recurrence requires a due date.
+    data = todo._empty()
+    with pytest.raises(ValueError):
+        todo.add_task(data, "No due", recurrence="daily")
+    assert data["active"] == []
+
+
+def test_add_task_bad_recurrence_rejected():
+    data = todo._empty()
+    with pytest.raises(ValueError):
+        todo.add_task(data, "Bad", due="2026-07-01T09:00:00",
+                      recurrence="hourly")
+    with pytest.raises(ValueError):
+        todo.add_task(data, "Bad N", due="2026-07-01T09:00:00",
+                      recurrence="every:0")
+    assert data["active"] == []
+
+
+def test_add_task_custom_interval_ok():
+    data = todo._empty()
+    todo.add_task(data, "Every 3 days",
+                  due="2026-07-01T09:00:00", recurrence="every:3")
+    assert data["active"][0]["recurrence"] == "every:3"
+
+
+# --------------------------------------------------------------------------- #
+# edit_task
+# --------------------------------------------------------------------------- #
+
+def test_edit_task_updates_title_and_due():
+    data = todo._empty()
+    todo.add_task(data, "Old title")
+    tid = data["active"][0]["id"]
+    todo.edit_task(data, tid, "New title", due="2026-08-01T10:00:00")
+    task = data["active"][0]
+    assert task["title"] == "New title"
+    assert task["due"] == "2026-08-01T10:00:00"
+
+
+def test_edit_task_can_set_recurrence():
+    data = todo._empty()
+    todo.add_task(data, "Task", due="2026-08-01T10:00:00")
+    tid = data["active"][0]["id"]
+    todo.edit_task(data, tid, "Task", due="2026-08-01T10:00:00",
+                   recurrence="weekly")
+    assert data["active"][0]["recurrence"] == "weekly"
+
+
+def test_edit_task_can_clear_due_and_recurrence():
+    data = todo._empty()
+    todo.add_task(data, "Task", due="2026-08-01T10:00:00", recurrence="daily")
+    tid = data["active"][0]["id"]
+    todo.edit_task(data, tid, "Task")   # no due, no recurrence
+    assert data["active"][0]["due"] is None
+    assert data["active"][0]["recurrence"] is None
+
+
+def test_edit_task_empty_title_rejected():
+    data = todo._empty()
+    todo.add_task(data, "Keep")
+    tid = data["active"][0]["id"]
+    with pytest.raises(ValueError):
+        todo.edit_task(data, tid, "   ")
+    assert data["active"][0]["title"] == "Keep"   # unchanged
+
+
+def test_edit_task_bad_due_rejected():
+    data = todo._empty()
+    todo.add_task(data, "Keep")
+    tid = data["active"][0]["id"]
+    with pytest.raises(ValueError):
+        todo.edit_task(data, tid, "Keep", due="nope")
+
+
+def test_edit_task_recurrence_without_due_rejected():
+    data = todo._empty()
+    todo.add_task(data, "Keep")
+    tid = data["active"][0]["id"]
+    with pytest.raises(ValueError):
+        todo.edit_task(data, tid, "Keep", recurrence="daily")
+
+
+def test_edit_task_unknown_id_is_noop():
+    data = todo._empty()
+    todo.add_task(data, "Keep")
+    # Should not raise and should not change anything.
+    todo.edit_task(data, "does-not-exist", "Whatever")
+    assert data["active"][0]["title"] == "Keep"
+
+
+# --------------------------------------------------------------------------- #
+# next_occurrence
+# --------------------------------------------------------------------------- #
+
+def test_next_occurrence_daily():
+    nxt = todo.next_occurrence("2026-06-15T09:00:00", "daily")
+    assert nxt == "2026-06-16T09:00:00"
+
+
+def test_next_occurrence_weekly():
+    nxt = todo.next_occurrence("2026-06-15T09:00:00", "weekly")
+    assert nxt == "2026-06-22T09:00:00"
+
+
+def test_next_occurrence_monthly():
+    nxt = todo.next_occurrence("2026-06-15T09:00:00", "monthly")
+    assert nxt == "2026-07-15T09:00:00"
+
+
+def test_next_occurrence_monthly_month_end_clamp():
+    # Jan 31 + 1 month -> Feb 28 (2026 is not a leap year).
+    nxt = todo.next_occurrence("2026-01-31T09:00:00", "monthly")
+    assert nxt == "2026-02-28T09:00:00"
+
+
+def test_next_occurrence_monthly_leap_year_clamp():
+    # Jan 31, 2028 + 1 month -> Feb 29 (2028 is a leap year).
+    nxt = todo.next_occurrence("2028-01-31T09:00:00", "monthly")
+    assert nxt == "2028-02-29T09:00:00"
+
+
+def test_next_occurrence_monthly_year_rollover():
+    nxt = todo.next_occurrence("2026-12-10T09:00:00", "monthly")
+    assert nxt == "2027-01-10T09:00:00"
+
+
+def test_next_occurrence_custom_interval():
+    nxt = todo.next_occurrence("2026-06-15T09:00:00", "every:3")
+    assert nxt == "2026-06-18T09:00:00"
+
+
+def test_next_occurrence_none_recurrence():
+    assert todo.next_occurrence("2026-06-15T09:00:00", None) is None
+
+
+def test_next_occurrence_bad_due():
+    assert todo.next_occurrence("not-a-date", "daily") is None
+
+
+# --------------------------------------------------------------------------- #
+# refresh -- recurring expiry / spawn flow
+# --------------------------------------------------------------------------- #
+
+def test_refresh_completed_recurring_archives_and_spawns_next():
+    data = todo._empty()
+    todo.add_task(data, "Daily report",
+                  due=(NOW + timedelta(hours=2)).isoformat(),
+                  recurrence="daily")
+    tid = data["active"][0]["id"]
+
+    todo.refresh(data, [tid], now=NOW)
+
+    # Original archived with completed stamp.
+    assert len(data["archive"]) == 1
+    assert data["archive"][0]["completed"] == NOW.isoformat()
+    # A fresh occurrence spawned into active, one day later, new id.
+    assert len(data["active"]) == 1
+    spawned = data["active"][0]
+    assert spawned["id"] != tid
+    assert spawned["title"] == "Daily report"
+    assert spawned["recurrence"] == "daily"
+    assert todo._parse(spawned["due"]) == NOW + timedelta(days=1, hours=2)
+
+
+def test_refresh_completed_non_recurring_just_archives():
+    data = todo._empty()
+    todo.add_task(data, "One off", due=(NOW + timedelta(hours=2)).isoformat())
+    tid = data["active"][0]["id"]
+    todo.refresh(data, [tid], now=NOW)
+    assert len(data["archive"]) == 1
+    assert data["active"] == []   # nothing spawned
+
+
+def test_refresh_missed_recurring_moves_to_expired_and_spawns():
+    data = todo._empty()
+    # A daily task that was due yesterday and NOT completed.
+    missed_due = (NOW - timedelta(days=1)).isoformat()
+    todo.add_task(data, "Timesheet", due=missed_due, recurrence="daily")
+    tid = data["active"][0]["id"]
+
+    todo.refresh(data, [], now=NOW)
+
+    # Missed occurrence moved to expired (with expired_at stamp).
+    assert len(data["expired"]) == 1
+    expired = data["expired"][0]
+    assert expired["id"] == tid
+    assert expired["due"] == missed_due
+    assert expired["expired_at"] == NOW.isoformat()
+    # Next future occurrence spawned into active.
+    assert len(data["active"]) == 1
+    spawned = data["active"][0]
+    assert spawned["id"] != tid
+    assert spawned["title"] == "Timesheet"
+    # Must be strictly in the future relative to now.
+    assert todo._parse(spawned["due"]) > NOW
+    # First future daily occurrence after (NOW - 1 day) is NOW + ... actually
+    # yesterday's due + 1 day = today's due, which here equals NOW exactly,
+    # so it advances once more to be strictly future.
+    assert todo._parse(spawned["due"]) == NOW + timedelta(days=1)
+
+
+def test_refresh_missed_recurring_skips_multiple_intervals():
+    data = todo._empty()
+    # Due 5 days ago, daily -> next future occurrence is tomorrow's stamp.
+    missed_due = (NOW - timedelta(days=5)).isoformat()
+    todo.add_task(data, "Old daily", due=missed_due, recurrence="daily")
+    todo.refresh(data, [], now=NOW)
+    spawned = data["active"][0]
+    # Advances past now: (NOW - 5d) + 6 days = NOW + 1 day.
+    assert todo._parse(spawned["due"]) == NOW + timedelta(days=1)
+
+
+def test_refresh_non_recurring_overdue_stays_active():
+    data = todo._empty()
+    todo.add_task(data, "Overdue chore",
+                  due=(NOW - timedelta(days=2)).isoformat())
+    todo.refresh(data, [], now=NOW)
+    assert len(data["active"]) == 1
+    assert data["active"][0]["title"] == "Overdue chore"
+    assert data["expired"] == []
+
+
+def test_refresh_future_recurring_left_alone():
+    data = todo._empty()
+    todo.add_task(data, "Future weekly",
+                  due=(NOW + timedelta(days=3)).isoformat(),
+                  recurrence="weekly")
+    tid = data["active"][0]["id"]
+    todo.refresh(data, [], now=NOW)
+    # Not overdue -> untouched, same id, nothing expired.
+    assert len(data["active"]) == 1
+    assert data["active"][0]["id"] == tid
+    assert data["expired"] == []

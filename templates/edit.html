@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <h2>Edit task</h2>
+
+  {# Work out what the recurrence dropdown should pre-select, and the
+     custom N value if it's an "every:N" recurrence. #}
+  {% set rec = task.recurrence or "" %}
+  {% set is_custom = rec.startswith("every:") %}
+  {% set custom_n = rec.split(":")[1] if is_custom else "" %}
+
+  <form class="add-form" method="post"
+        action="{{ url_for('edit_post', task_id=task.id) }}">
+    <input type="text" name="title" value="{{ task.title }}"
+           placeholder="What needs doing?" required>
+    <input type="datetime-local" name="due" value="{{ task.due or '' }}">
+    <select name="recurrence" class="recur-select">
+      <option value="" {% if not rec %}selected{% endif %}>No repeat</option>
+      <option value="daily" {% if rec == 'daily' %}selected{% endif %}>Daily</option>
+      <option value="weekly" {% if rec == 'weekly' %}selected{% endif %}>Weekly</option>
+      <option value="monthly" {% if rec == 'monthly' %}selected{% endif %}>Monthly</option>
+      <option value="custom" {% if is_custom %}selected{% endif %}>Custom</option>
+    </select>
+    <input type="number" name="custom_n" min="1" placeholder="N days"
+           class="custom-n" value="{{ custom_n }}">
+    <button type="submit">Save</button>
+  </form>
+
+  <p><a class="back-link" href="{{ url_for('index') }}">&larr; Back to active</a></p>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <!-- Add a new task -->
+  <form class="add-form" method="post" action="{{ url_for('add') }}">
+    <input type="text" name="title" placeholder="What needs doing?" required>
+    <input type="datetime-local" name="due">
+    <!-- Recurrence dropdown; the number input is only used for "Custom". -->
+    <select name="recurrence" class="recur-select">
+      <option value="">No repeat</option>
+      <option value="daily">Daily</option>
+      <option value="weekly">Weekly</option>
+      <option value="monthly">Monthly</option>
+      <option value="custom">Custom</option>
+    </select>
+    <input type="number" name="custom_n" min="1" placeholder="N days"
+           class="custom-n">
+    <button type="submit">Add</button>
+  </form>
+
+  {% if tasks %}
+    <!-- The whole task list is one form; the Refresh button submits the
+         checked items to /refresh, which archives them. -->
+    <form method="post" action="{{ url_for('refresh') }}">
+      <ul class="task-list">
+        {% for task in tasks %}
+          <li class="task">
+            <input type="checkbox" name="completed" value="{{ task.id }}">
+            <span class="title">{{ task.title }}</span>
+            {% if task.recurrence %}
+              <span class="recur-tag">&#8635; {{ task.recurrence }}</span>
+            {% endif %}
+            {% set badge = time_remaining(task.due) %}
+            {% if badge %}
+              <span class="badge {% if is_overdue(task.due) %}overdue{% endif %}">
+                {{ badge }}
+              </span>
+            {% endif %}
+            <a class="edit" href="{{ url_for('edit', task_id=task.id) }}">edit</a>
+            <!-- Separate small form so deleting doesn't archive everything. -->
+            <button form="delete-{{ task.id }}" type="submit" class="delete">x</button>
+          </li>
+        {% endfor %}
+      </ul>
+      <button type="submit" class="refresh">Refresh</button>
+    </form>
+
+    <!-- Delete forms live outside the refresh form (can't nest forms). -->
+    {% for task in tasks %}
+      <form id="delete-{{ task.id }}" method="post"
+            action="{{ url_for('delete', task_id=task.id) }}"></form>
+    {% endfor %}
+  {% else %}
+    <p class="empty">No tasks yet. Add one above!</p>
+  {% endif %}
+
+  <!-- Expired: missed recurring occurrences. -->
+  {% if expired %}
+    <section class="expired-section">
+      <h2>Expired</h2>
+      <ul class="task-list">
+        {% for task in expired %}
+          <li class="task expired-item">
+            <span class="title">{{ task.title }}</span>
+            <span class="badge">missed {{ task.due }}</span>
+            <button form="delete-exp-{{ task.id }}" type="submit"
+                    class="delete">x</button>
+          </li>
+        {% endfor %}
+      </ul>
+      {% for task in expired %}
+        <form id="delete-exp-{{ task.id }}" method="post"
+              action="{{ url_for('delete', task_id=task.id) }}"></form>
+      {% endfor %}
+    </section>
+  {% endif %}
+{% endblock %}

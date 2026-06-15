@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {% if tasks %}
+    <ul class="task-list">
+      {% for task in tasks %}
+        <li class="task">
+          <span class="title">{{ task.title }}</span>
+          <span class="badge">completed {{ task.completed }}</span>
+          <button form="delete-{{ task.id }}" type="submit" class="delete">x</button>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <!-- Delete forms for archived tasks. -->
+    {% for task in tasks %}
+      <form id="delete-{{ task.id }}" method="post"
+            action="{{ url_for('delete', task_id=task.id) }}"></form>
+    {% endfor %}
+  {% else %}
+    <p class="empty">No archived tasks.</p>
+  {% endif %}
+{% endblock %}
