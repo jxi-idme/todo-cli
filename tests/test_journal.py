@@ -225,3 +225,61 @@ def test_get_entry_by_date_and_sorted():
     assert journal.get_entry_by_date(data, "2026-06-01") is None
     dates = [e["date"] for e in journal.entries_sorted(data)]
     assert dates == ["2026-06-15", "2026-06-13"]   # newest first
+
+
+# --------------------------------------------------------------------------- #
+# Task 6: Entry upsert & delete
+# --------------------------------------------------------------------------- #
+
+def test_upsert_creates_then_updates_same_date():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    e1 = journal.upsert_entry(data, "2026-06-15", "Day one", "body",
+                              tags={s["id"]: ["maya"]}, now=NOW)
+    assert e1["created"] == NOW.isoformat()
+    assert e1["tags"] == {s["id"]: ["maya"]}
+    # same date -> updates, does not duplicate
+    later = datetime(2026, 6, 15, 21, 0, 0)
+    e2 = journal.upsert_entry(data, "2026-06-15", "Edited", "new body", now=later)
+    assert len(data["entries"]) == 1
+    assert e2["id"] == e1["id"]
+    assert e2["created"] == NOW.isoformat()       # preserved
+    assert e2["updated"] == later.isoformat()     # bumped
+    assert e2["title"] == "Edited"
+
+
+def test_upsert_validates_date_and_title():
+    data = journal._empty()
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "bad-date", "t", "", now=NOW)
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-15", "   ", "", now=NOW)
+
+
+def test_upsert_cleans_tags_and_numbers():
+    data = journal._empty()
+    tag_s = journal.add_section(data, "people", "tag", "#fff")
+    num_s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    e = journal.upsert_entry(
+        data, "2026-06-15", "t", "",
+        tags={tag_s["id"]: [" Maya ", "maya", "dad"], "ghost-section": ["x"]},
+        numbers={num_s["id"]: "8.5", "ghost-section": "3"},
+        now=NOW,
+    )
+    assert e["tags"] == {tag_s["id"]: ["maya", "dad"]}   # normalized, deduped, ghost dropped
+    assert e["numbers"] == {num_s["id"]: 8.5}            # cast to float, ghost dropped
+
+
+def test_upsert_rejects_non_numeric_value():
+    data = journal._empty()
+    num_s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-15", "t", "",
+                             numbers={num_s["id"]: "eight"}, now=NOW)
+
+
+def test_delete_entry():
+    data = journal._empty()
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
+    journal.delete_entry(data, e["id"])
+    assert data["entries"] == []

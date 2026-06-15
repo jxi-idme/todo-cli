@@ -275,3 +275,74 @@ def get_entry_by_date(data, date):
 def entries_sorted(data):
     """Entries newest date first."""
     return sorted(data.get("entries", []), key=lambda e: e.get("date", ""), reverse=True)
+
+
+# --------------------------------------------------------------------------- #
+# Task 6: Entry upsert & delete
+# --------------------------------------------------------------------------- #
+
+def upsert_entry(data, date, title, body, tags=None, numbers=None, now=None):
+    """Create or update the entry for `date` (the unique key).
+
+    `tags` is {section_id: [tag names]} and `numbers` is {section_id: value};
+    both are keyed by stable section id. Tag names are normalized/validated and
+    deduped; number values are cast to float. Section ids that don't resolve to
+    any section are dropped. Raises ValueError on an invalid date, empty title,
+    or a non-numeric number. `created` is set once; `updated` on every save.
+    """
+    if not _valid_date(date):
+        raise ValueError(f"Invalid date: {date!r}")
+    title = (title or "").strip()
+    if not title:
+        raise ValueError("Entry title must not be empty")
+    body = body or ""
+    now = now or datetime.now()
+
+    clean_tags = {}
+    for section_id, names in (tags or {}).items():
+        if section_by_id(data, section_id) is None:
+            continue
+        norm = []
+        for raw in names or []:
+            n = _normalize_name(raw) if isinstance(raw, str) else ""
+            if n and _valid_name(n) and n not in norm:
+                norm.append(n)
+        if norm:
+            clean_tags[section_id] = norm
+
+    clean_numbers = {}
+    for section_id, value in (numbers or {}).items():
+        if section_by_id(data, section_id) is None:
+            continue
+        try:
+            clean_numbers[section_id] = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid number for section {section_id!r}: {value!r}")
+
+    existing = get_entry_by_date(data, date)
+    if existing is not None:
+        existing["title"] = title
+        existing["body"] = body
+        existing["tags"] = clean_tags
+        existing["numbers"] = clean_numbers
+        existing["updated"] = now.isoformat()
+        return existing
+
+    entry = {
+        "id": uuid.uuid4().hex,
+        "date": date,
+        "title": title,
+        "body": body,
+        "created": now.isoformat(),
+        "updated": now.isoformat(),
+        "tags": clean_tags,
+        "numbers": clean_numbers,
+    }
+    data.setdefault("entries", []).append(entry)
+    return entry
+
+
+def delete_entry(data, entry_id):
+    """Remove an entry by id. Unknown id = no-op."""
+    data["entries"] = [e for e in data.get("entries", []) if e.get("id") != entry_id]
+    return data
