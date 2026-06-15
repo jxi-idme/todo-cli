@@ -9,15 +9,26 @@
 <body>
   <header>
     <div class="brand">
-      <!-- Mascot image lives in static/img/mascot.gif -->
+      {% block brand %}
       <img class="mascot" src="{{ url_for('static', filename='img/mascot.gif') }}"
            width="56" height="56" alt="Mascot">
       <span class="site-title">todo&middot;pup</span>
+      {% endblock %}
     </div>
     <nav>
+      {% block nav %}
       <a href="{{ url_for('index') }}">Active</a>
       <a href="{{ url_for('archive') }}">Archive</a>
       <a href="{{ url_for('tags') }}">Manage tags</a>
+      {% endblock %}
+      <!-- Pompompurin toggles between Tasks and Journal. -->
+      <a class="puri-toggle"
+         href="{{ url_for('index') if in_journal else url_for('journal_today') }}"
+         title="Switch between Tasks and Journal">
+        <img class="mascot mascot-puri"
+             src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+             width="40" height="40" alt="pompompurin — switch to {{ 'Tasks' if in_journal else 'Journal' }}">
+      </a>
     </nav>
   </header>
 

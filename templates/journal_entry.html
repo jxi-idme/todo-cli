@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block brand %}
+  <img class="mascot mascot-puri"
+       src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+       width="56" height="56" alt="pompompurin">
+  <span class="site-title">journal</span>
+{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('journal_today') }}">New entry</a>
+  <a href="{{ url_for('journal_list') }}">Past entries</a>
+  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+{% endblock %}
+{% block content %}<p>journal entry for {{ date }}</p>{% endblock %}

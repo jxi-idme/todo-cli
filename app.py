@@ -9,6 +9,7 @@ import os
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
+import journal
 import todo
 
 app = Flask(__name__)
@@ -28,6 +29,16 @@ app.config["DATA_FILE"] = os.path.join(
 
 def data_file():
     return app.config["DATA_FILE"]
+
+
+# Journal store lives alongside tasks; tests override via JOURNAL_FILE.
+app.config["JOURNAL_FILE"] = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "journal.json"
+)
+
+
+def journal_file():
+    return app.config["JOURNAL_FILE"]
 
 
 def _recurrence_from_form(form):
@@ -79,6 +90,14 @@ app.jinja_env.globals["time_remaining"] = todo.time_remaining
 app.jinja_env.globals["is_overdue"] = todo.is_overdue
 app.jinja_env.globals["tag_color"] = todo.tag_color
 app.jinja_env.globals["text_color_for"] = todo.text_color_for
+app.jinja_env.globals["section_color"] = journal.section_color
+app.jinja_env.globals["is_registered_tag"] = journal.is_registered_tag
+
+
+@app.context_processor
+def inject_section_context():
+    endpoint = request.endpoint or ""
+    return {"in_journal": endpoint.startswith("journal")}
 
 
 @app.route("/")
@@ -221,6 +240,31 @@ def tag_delete(name):
     todo.save(data_file(), data)
     flash("Tag deleted.")
     return redirect(url_for("tags"))
+
+
+@app.route("/journal")
+def journal_today():
+    data = journal.load(journal_file())
+    today = journal.today_iso()
+    entry = journal.get_entry_by_date(data, today)
+    return render_template(
+        "journal_entry.html", data=data, entry=entry, date=today,
+        sections=journal.active_sections(data),
+    )
+
+
+@app.route("/journal/entries")
+def journal_list():
+    data = journal.load(journal_file())
+    return render_template("journal_list.html", data=data,
+                           entries=journal.entries_sorted(data))
+
+
+@app.route("/journal/sections")
+def journal_sections():
+    data = journal.load(journal_file())
+    return render_template("journal_sections.html", data=data,
+                           sections=journal.active_sections(data))
 
 
 if __name__ == "__main__":
