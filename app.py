@@ -41,6 +41,11 @@ def journal_file():
     return app.config["JOURNAL_FILE"]
 
 
+# Local single-user dev app: pick up template edits without restarting the
+# server (Flask otherwise caches compiled templates when not run with --debug).
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+
 def _recurrence_from_form(form):
     """Turn the recurrence dropdown (+ custom N) into a stored value.
 
