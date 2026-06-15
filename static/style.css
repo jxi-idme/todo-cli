@@ -255,6 +255,135 @@ button:hover {
   text-decoration: line-through;
 }
 
+/* ----- tags ----- */
+
+/* A small rounded pill. Colors are data-driven via inline CSS custom
+   properties (--tag-bg / --tag-fg) so the stylesheet stays generic. */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--tag-bg, var(--panel));
+  color: var(--tag-fg, var(--text));
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* Tag section inside the add/edit forms: chips + new-tag inputs wrap nicely. */
+.tag-section {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Existing-tag toggle chips are <label>s wrapping a hidden-ish checkbox. */
+.tag-toggle {
+  cursor: pointer;
+}
+
+/* Circular check indicator inside tag chips -- the same toggle UI as the
+   task list checkboxes, scaled down to fit within a chip. Used by the
+   add/edit tag toggles (styled checkbox) and the filter chips (span). */
+.tag-check,
+.tag-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  aspect-ratio: 1 / 1;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background-color: #3a3f4a;
+  cursor: pointer;
+}
+
+.tag-check.on,
+.tag-toggle input[type="checkbox"]:checked {
+  background-color: #3fae5a;
+}
+
+/* Group holding the "new tag" name + color inputs and the live preview. */
+.tag-preview-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tag-preview-group .tag-name-input {
+  width: 120px;
+}
+
+/* Keep the native color picker compact. */
+input[type="color"] {
+  width: 40px;
+  height: 34px;
+  padding: 2px;
+}
+
+/* ----- filter chips ----- */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 1.25rem;
+}
+
+.filter-chip {
+  text-decoration: none;
+}
+
+/* Selected state is shown by the circular check indicator inside the chip. */
+
+.filter-all {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+}
+
+.filter-all:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-all.selected {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ----- title highlight (highlighter-marker effect behind the title text) -----
+   The background is a SEMI-TRANSPARENT tint of the tag color so the dark theme
+   shows through like a highlighter pen. We mix the tag color with `transparent`
+   via color-mix so only the BACKGROUND fades -- not the text (using `opacity`
+   here would dim the words too). Because the tint sits over the dark page, the
+   text stays the normal light theme color rather than a computed black/white. */
+.title-highlight {
+  background: color-mix(in srgb, var(--tag-bg, transparent) 35%, transparent);
+  color: var(--text);
+  padding: 0 0.2em;
+  border-radius: 3px;
+  /* Hug the text only (not full width) and highlight each wrapped line. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ----- manage tags page ----- */
+.tag-manage-form {
+  flex: 1;
+}
+
 /* ----- misc ----- */
 .empty {
   color: var(--muted);
@@ -273,4 +402,19 @@ button:hover {
 
 h2 {
   color: var(--text);
+}
+
+/* ----- flashed validation notices ----- */
+.flashes {
+  margin: 0 0 1rem;
+}
+
+.flash {
+  background: #3a2526;
+  color: #f4c7c3;
+  border: 1px solid #7a3030;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
 }

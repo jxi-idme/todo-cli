@@ -17,10 +17,22 @@
     <nav>
       <a href="{{ url_for('index') }}">Active</a>
       <a href="{{ url_for('archive') }}">Archive</a>
+      <a href="{{ url_for('tags') }}">Manage tags</a>
     </nav>
   </header>
 
   <main>
+    {# Validation/error notices raised by routes via flask.flash(). #}
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flashes">
+          {% for message in messages %}
+            <p class="flash">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
     {% block content %}{% endblock %}
   </main>
 
@@ -37,6 +49,36 @@
       }
       select.addEventListener('change', sync);
       sync();  // set correct state on page load
+    });
+
+    // Live preview for the "new tag" inputs: as you type a name or pick a
+    // color, update the sample so you can see the highlight before saving.
+    // The sample is a .title-highlight element, so it uses the SAME
+    // translucent text-only highlight CSS as the real title -- we just feed it
+    // the chosen color through --tag-bg and let color-mix do the tinting. That
+    // means the preview always matches the result, with no color math here.
+    // Each preview group is a wrapper with .tag-preview-group containing a
+    // name input, a color input, and a .tag-preview sample element.
+    document.querySelectorAll('.tag-preview-group').forEach(function (group) {
+      var nameInput = group.querySelector('.tag-name-input');
+      var colorInput = group.querySelector('.tag-color-input');
+      var sample = group.querySelector('.tag-preview');
+      if (!sample || !colorInput) return;
+      function sync() {
+        var color = colorInput.value || '#8a8f99';
+        // Only touch --tag-bg if the value really is a hex color; an input
+        // could hand us something unexpected and we don't want to write junk
+        // into the inline style.
+        if (/^#[0-9a-fA-F]{3,6}$/.test(color)) {
+          sample.style.setProperty('--tag-bg', color);
+        }
+        if (nameInput) {
+          sample.textContent = nameInput.value.trim() || 'preview';
+        }
+      }
+      if (nameInput) nameInput.addEventListener('input', sync);
+      colorInput.addEventListener('input', sync);
+      sync();  // initial render
     });
   </script>
 </body>

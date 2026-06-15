@@ -1,11 +1,42 @@
 {% extends "base.html" %}
+{% from "_macros.html" import toggle_url %}
 
 {% block content %}
+  <!-- Filter chips: each known tag toggles in/out of the ?tags= filter for
+       the ARCHIVE page. Same UI as the active page. -->
+  {% if all_tags %}
+    <div class="filter-row">
+      <a class="filter-all {% if not selected_tags %}selected{% endif %}"
+         href="{{ url_for('archive') }}">All</a>
+      {% for name, color in all_tags.items() %}
+        <a class="tag-chip filter-chip {% if name in selected_tags %}selected{% endif %}"
+           style="--tag-bg: {{ color }}; --tag-fg: {{ text_color_for(color) }};"
+           href="{{ toggle_url(name, selected_tags, 'archive') }}">
+          <span class="tag-check {% if name in selected_tags %}on{% endif %}"></span>{{ name }}
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   {% if tasks %}
     <ul class="task-list">
       {% for task in tasks %}
         <li class="task">
-          <span class="title">{{ task.title }}</span>
+          {% set tags = task.tags or [] %}
+          {% if tags %}
+            {# First tag drives the title highlight; extra tags become chips --
+               exactly like the active page. #}
+            {% set hl = tag_color(data, tags[0]) %}
+            <span class="title"><span class="title-highlight"
+                  style="--tag-bg: {{ hl }};">{{ task.title }}</span></span>
+            {% for name in tags[1:] %}
+              {% set c = tag_color(data, name) %}
+              <span class="tag-chip"
+                    style="--tag-bg: {{ c }}; --tag-fg: {{ text_color_for(c) }};">{{ name }}</span>
+            {% endfor %}
+          {% else %}
+            <span class="title">{{ task.title }}</span>
+          {% endif %}
           <span class="badge">completed {{ task.completed }}</span>
           <button form="delete-{{ task.id }}" type="submit" class="delete">x</button>
         </li>
@@ -17,6 +48,8 @@
       <form id="delete-{{ task.id }}" method="post"
             action="{{ url_for('delete', task_id=task.id) }}"></form>
     {% endfor %}
+  {% elif selected_tags %}
+    <p class="empty">No archived tasks match this filter.</p>
   {% else %}
     <p class="empty">No archived tasks.</p>
   {% endif %}
