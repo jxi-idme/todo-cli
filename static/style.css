@@ -71,24 +71,31 @@ nav a:hover {
   border-bottom-color: var(--accent);
 }
 
-/* Pompompurin toggle: the clickable mascot that switches Tasks <-> Journal.
-   Labelled and given a hover ring so it reads as interactive (and is
-   distinguishable from the non-clickable brand mascot). */
-.puri-toggle {
-  display: inline-flex;
+/* The brand mascot is the clickable toggle that switches Tasks <-> Journal,
+   with a directional caption ("journal ->" / "todo ->") stacked beneath it. */
+.brand-toggle {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-left: 1rem;
-  border-bottom: none;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: inherit;
 }
-.puri-toggle .mascot-puri {
-  width: 40px;
-  height: 40px;
+.brand-mascot-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+.brand-mascot-stack .mascot {
   transition: box-shadow 0.15s ease;
 }
-.puri-label { color: var(--muted); font-size: 0.85rem; }
-.puri-toggle:hover .puri-label { color: var(--accent); }
-.puri-toggle:hover .mascot-puri { box-shadow: 0 0 0 2px var(--accent); }
+.brand-switch {
+  font-size: 0.72rem;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.brand-toggle:hover .brand-switch { color: var(--accent); }
+.brand-toggle:hover .mascot { box-shadow: 0 0 0 2px var(--accent); }
 
 /* ----- add / edit form ----- */
 .add-form {
