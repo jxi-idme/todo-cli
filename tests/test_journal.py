@@ -60,3 +60,39 @@ def test_load_migrates_missing_fields(tmp_path):
     assert s["tags"] == [] and s["unit"] is None and s["archived"] is False
     e = data["entries"][0]
     assert e["tags"] == {} and e["numbers"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# Task 2: Section lookup & display helpers
+# --------------------------------------------------------------------------- #
+
+def test_active_sections_excludes_archived():
+    data = journal._empty()
+    a = journal.add_section(data, "people", "tag", "#fff")
+    b = journal.add_section(data, "work", "tag", "#000")
+    b["archived"] = True
+    assert journal.active_sections(data) == [a]
+
+
+def test_section_by_id_finds_archived_too():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    s["archived"] = True
+    assert journal.section_by_id(data, s["id"]) is s
+    assert journal.section_by_id(data, "missing") is None
+
+
+def test_section_color_falls_back_to_default():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#abcdef")
+    assert journal.section_color(data, s["id"]) == "#abcdef"
+    assert journal.section_color(data, "missing") == journal.DEFAULT_SECTION_COLOR
+
+
+def test_is_registered_tag():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    s["tags"] = ["maya"]
+    assert journal.is_registered_tag(data, s["id"], "maya") is True
+    assert journal.is_registered_tag(data, s["id"], "MAYA") is True   # normalized
+    assert journal.is_registered_tag(data, s["id"], "ghost") is False

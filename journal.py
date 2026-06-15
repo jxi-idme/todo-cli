@@ -115,3 +115,37 @@ def add_section(data, name, type_, color, unit=None):
     }
     data.setdefault("sections", []).append(section)
     return section
+
+
+# --------------------------------------------------------------------------- #
+# Task 2: Section lookup & display helpers
+# --------------------------------------------------------------------------- #
+
+def _normalize_name(name):
+    """Strip + lowercase a single name (sections, tags)."""
+    return (name or "").strip().lower()
+
+
+def active_sections(data):
+    """Non-archived sections, in stored order."""
+    return [s for s in data.get("sections", []) if not s.get("archived")]
+
+
+def section_by_id(data, section_id):
+    """A section by id (archived ones included), or None."""
+    for s in data.get("sections", []):
+        if s.get("id") == section_id:
+            return s
+    return None
+
+
+def section_color(data, section_id):
+    """The section's hex color, or a neutral default if unknown."""
+    s = section_by_id(data, section_id)
+    return s["color"] if s else DEFAULT_SECTION_COLOR
+
+
+def is_registered_tag(data, section_id, tag):
+    """True if `tag` is in the section's permanent tag list (normalized)."""
+    s = section_by_id(data, section_id)
+    return bool(s) and _normalize_name(tag) in (s.get("tags") or [])
