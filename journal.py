@@ -211,3 +211,33 @@ def archive_section(data, section_id):
     if s is not None:
         s["archived"] = True
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Task 4: Permanent tags on sections
+# --------------------------------------------------------------------------- #
+
+def add_section_tag(data, section_id, tag):
+    """Add a permanent tag to a tag-section (normalized, validated, unique).
+    Raises on a bad name or a numeric section. Unknown id = no-op."""
+    tag = _normalize_name(tag)
+    if not _valid_name(tag):
+        raise ValueError(f"Invalid tag name: {tag!r}")
+    s = section_by_id(data, section_id)
+    if s is None:
+        return data
+    if s.get("type") != "tag":
+        raise ValueError("Cannot add tags to a numeric section")
+    if tag not in s.setdefault("tags", []):
+        s["tags"].append(tag)
+    return data
+
+
+def remove_section_tag(data, section_id, tag):
+    """Remove a permanent tag from a section's master list (entries keep it).
+    Unknown id/tag = safe no-op."""
+    tag = _normalize_name(tag)
+    s = section_by_id(data, section_id)
+    if s is not None and isinstance(s.get("tags"), list):
+        s["tags"] = [t for t in s["tags"] if t != tag]
+    return data

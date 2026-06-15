@@ -170,3 +170,33 @@ def test_archive_section_soft_deletes():
     journal.archive_section(data, s["id"])
     assert journal.section_by_id(data, s["id"])["archived"] is True
     assert journal.active_sections(data) == []
+
+
+# --------------------------------------------------------------------------- #
+# Task 4: Permanent tags on sections
+# --------------------------------------------------------------------------- #
+
+def test_add_section_tag_appends_normalized_unique():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], " Maya ")
+    journal.add_section_tag(data, s["id"], "maya")   # dup ignored
+    assert journal.section_by_id(data, s["id"])["tags"] == ["maya"]
+
+
+def test_add_section_tag_rejects_bad_name_and_numeric_section():
+    data = journal._empty()
+    tag_s = journal.add_section(data, "people", "tag", "#fff")
+    num_s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    with pytest.raises(ValueError):
+        journal.add_section_tag(data, tag_s["id"], "bad;name")
+    with pytest.raises(ValueError):
+        journal.add_section_tag(data, num_s["id"], "nope")
+
+
+def test_remove_section_tag_keeps_entries_unaffected():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "maya")
+    journal.remove_section_tag(data, s["id"], "maya")
+    assert journal.section_by_id(data, s["id"])["tags"] == []
