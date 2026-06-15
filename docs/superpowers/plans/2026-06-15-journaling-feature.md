@@ -12,6 +12,41 @@
 
 ---
 
+## AMENDMENT (post-Task-7): brand-mascot toggle
+
+After Task 7, the navigation was redesigned per user feedback. The code blocks
+in Tasks 8–11 below still show the OLD toggle markup; follow this amendment
+where they conflict:
+
+- **The brand mascot itself is the toggle** (no separate right-side
+  `.puri-toggle` element). Clicking the brand mascot switches Tasks ⇄ Journal,
+  with a directional caption ("journal →" on task pages, "todo →" on journal
+  pages) stacked beneath it.
+- **`base.html` now exposes two blocks instead of `{% block brand %}`:**
+  `{% block brand_mascot %}` (the `<img class="mascot" ...>`) and
+  `{% block brand_title %}` (the `<span class="site-title">`). The toggle anchor
+  and caption live in `base.html` and are shared.
+- **Journal templates (Tasks 8, 9, 10) must override `brand_mascot` and
+  `brand_title`**, NOT `brand`. Use class `mascot` (the `mascot-puri` class no
+  longer exists). Pattern:
+  ```html
+  {% block brand_mascot %}
+    <img class="mascot" src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+         width="56" height="56" alt="pompompurin">
+  {% endblock %}
+  {% block brand_title %}
+    <span class="site-title">journal</span>
+  {% endblock %}
+  ```
+- **Task 11 (styling): do NOT add `.puri-toggle` / `.mascot-puri` rules** — they
+  were replaced by `.brand-toggle` / `.brand-mascot-stack` / `.brand-switch`,
+  already present in `static/style.css`. Skip Task 11 Step 1's pompompurin-toggle
+  CSS lines; keep the rest.
+- The `static/img/pompompurin.gif` placeholder asset already exists (Task 12
+  Step 1 is done).
+
+---
+
 ## File structure
 
 - **Create `journal.py`** — journal domain logic: persistence, sections, entries, display helpers.
