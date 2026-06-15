@@ -241,3 +241,37 @@ def remove_section_tag(data, section_id, tag):
     if s is not None and isinstance(s.get("tags"), list):
         s["tags"] = [t for t in s["tags"] if t != tag]
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Task 5: Entry lookup & date helpers
+# --------------------------------------------------------------------------- #
+
+def today_iso(now=None):
+    """Today's date as a YYYY-MM-DD string."""
+    now = now or datetime.now()
+    return now.date().isoformat()
+
+
+def _valid_date(date_str):
+    """True if `date_str` is a YYYY-MM-DD calendar date."""
+    if not isinstance(date_str, str):
+        return False
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def get_entry_by_date(data, date):
+    """The entry for `date`, or None (date is the unique key)."""
+    for e in data.get("entries", []):
+        if e.get("date") == date:
+            return e
+    return None
+
+
+def entries_sorted(data):
+    """Entries newest date first."""
+    return sorted(data.get("entries", []), key=lambda e: e.get("date", ""), reverse=True)

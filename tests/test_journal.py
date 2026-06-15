@@ -200,3 +200,28 @@ def test_remove_section_tag_keeps_entries_unaffected():
     journal.add_section_tag(data, s["id"], "maya")
     journal.remove_section_tag(data, s["id"], "maya")
     assert journal.section_by_id(data, s["id"])["tags"] == []
+
+
+# --------------------------------------------------------------------------- #
+# Task 5: Entry lookup & date helpers
+# --------------------------------------------------------------------------- #
+
+def test_today_iso_uses_injected_now():
+    assert journal.today_iso(now=NOW) == "2026-06-15"
+
+
+def test_valid_date():
+    assert journal._valid_date("2026-06-15") is True
+    assert journal._valid_date("2026-13-99") is False
+    assert journal._valid_date("nope") is False
+    assert journal._valid_date(None) is False
+
+
+def test_get_entry_by_date_and_sorted():
+    data = journal._empty()
+    journal.upsert_entry(data, "2026-06-13", "older", "", now=NOW)
+    journal.upsert_entry(data, "2026-06-15", "newer", "", now=NOW)
+    assert journal.get_entry_by_date(data, "2026-06-15")["title"] == "newer"
+    assert journal.get_entry_by_date(data, "2026-06-01") is None
+    dates = [e["date"] for e in journal.entries_sorted(data)]
+    assert dates == ["2026-06-15", "2026-06-13"]   # newest first
