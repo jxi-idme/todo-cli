@@ -5,19 +5,20 @@ Pure, testable functions over a plain data dict of the shape:
     {"sections": [...], "entries": [...]}
 
 NO Flask imports -- this is the journal "brain". The only dependency is a
-one-way import of todo.py's pure validators and text_color_for, so hex/name
-validation and contrast math have a single source of truth.
+one-way import of todo.py's pure validation regexes, so hex/name validation
+has a single source of truth.
 
 Dates: entry `date` is a YYYY-MM-DD string; timestamps are ISO 8601. All naive
 local time, matching todo.py.
 """
 
 import json
+import math
 import os
 import uuid
 from datetime import datetime
 
-from todo import _HEX_COLOR_RE, _TAG_NAME_RE, text_color_for  # noqa: F401
+from todo import _HEX_COLOR_RE, _TAG_NAME_RE
 
 # Default sections seeded on first run: six tag sections with distinct colors.
 _DEFAULT_SECTIONS = [
@@ -30,7 +31,7 @@ _DEFAULT_SECTIONS = [
 ]
 
 DEFAULT_SECTION_COLOR = "#8a8f99"
-_MAX_UNIT_LEN = 12
+_MAX_UNIT_LEN = 12  # keep unit labels short for the section-card layout
 
 
 def _empty():
@@ -141,6 +142,7 @@ def is_registered_tag(data, section_id, tag):
 # Task 3: Section CRUD with validation
 # --------------------------------------------------------------------------- #
 
+# Expects an already-normalized (stripped, lowercased) name.
 def _valid_name(name):
     return bool(name) and bool(_TAG_NAME_RE.match(name))
 
@@ -287,8 +289,10 @@ def upsert_entry(data, date, title, body, tags=None, numbers=None, now=None):
     `tags` is {section_id: [tag names]} and `numbers` is {section_id: value};
     both are keyed by stable section id. Tag names are normalized/validated and
     deduped; number values are cast to float. Section ids that don't resolve to
-    any section are dropped. Raises ValueError on an invalid date, empty title,
-    or a non-numeric number. `created` is set once; `updated` on every save.
+    any active section are dropped; ids for archived sections are accepted so
+    historical data is preserved. Raises ValueError on an invalid date, empty
+    title, or a non-numeric/non-finite number. `created` is set once; `updated`
+    on every save.
     """
     if not _valid_date(date):
         raise ValueError(f"Invalid date: {date!r}")
@@ -315,9 +319,12 @@ def upsert_entry(data, date, title, body, tags=None, numbers=None, now=None):
         if section_by_id(data, section_id) is None:
             continue
         try:
-            clean_numbers[section_id] = float(value)
+            v = float(value)
         except (TypeError, ValueError):
             raise ValueError(f"Invalid number for section {section_id!r}: {value!r}")
+        if not math.isfinite(v):
+            raise ValueError(f"Invalid number for section {section_id!r}: {value!r}")
+        clean_numbers[section_id] = v
 
     existing = get_entry_by_date(data, date)
     if existing is not None:

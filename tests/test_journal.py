@@ -194,12 +194,18 @@ def test_add_section_tag_rejects_bad_name_and_numeric_section():
         journal.add_section_tag(data, num_s["id"], "nope")
 
 
-def test_remove_section_tag_keeps_entries_unaffected():
+def test_remove_section_tag_removes_from_master_list_but_keeps_entry_tags():
     data = journal._empty()
     s = journal.add_section(data, "people", "tag", "#fff")
     journal.add_section_tag(data, s["id"], "maya")
+    # Create an entry that uses the tag before removing it from the section
+    e = journal.upsert_entry(data, "2026-06-15", "t", "",
+                             tags={s["id"]: ["maya"]}, now=NOW)
     journal.remove_section_tag(data, s["id"], "maya")
+    # Tag is gone from the section's master list ...
     assert journal.section_by_id(data, s["id"])["tags"] == []
+    # ... but the entry still carries it (historical data preserved)
+    assert e["tags"] == {s["id"]: ["maya"]}
 
 
 # --------------------------------------------------------------------------- #
@@ -246,6 +252,7 @@ def test_upsert_creates_then_updates_same_date():
     assert e2["created"] == NOW.isoformat()       # preserved
     assert e2["updated"] == later.isoformat()     # bumped
     assert e2["title"] == "Edited"
+    assert e2["body"] == "new body"
 
 
 def test_upsert_validates_date_and_title():
@@ -276,6 +283,33 @@ def test_upsert_rejects_non_numeric_value():
     with pytest.raises(ValueError):
         journal.upsert_entry(data, "2026-06-15", "t", "",
                              numbers={num_s["id"]: "eight"}, now=NOW)
+
+
+def test_upsert_rejects_nan_number():
+    data = journal._empty()
+    num_s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-15", "t", "",
+                             numbers={num_s["id"]: "nan"}, now=NOW)
+
+
+def test_upsert_rejects_inf_number():
+    data = journal._empty()
+    num_s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-15", "t", "",
+                             numbers={num_s["id"]: "inf"}, now=NOW)
+
+
+def test_upsert_accepts_archived_section_id_for_tag():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    section_id = s["id"]
+    journal.archive_section(data, section_id)
+    # Archived section id should be accepted so historical data is preserved
+    e = journal.upsert_entry(data, "2026-06-15", "t", "",
+                             tags={section_id: ["maya"]}, now=NOW)
+    assert e["tags"] == {section_id: ["maya"]}
 
 
 def test_delete_entry():
