@@ -247,15 +247,81 @@ def tag_delete(name):
     return redirect(url_for("tags"))
 
 
+def _render_entry(data, date):
+    return render_template(
+        "journal_entry.html", data=data,
+        entry=journal.get_entry_by_date(data, date),
+        date=date, sections=journal.active_sections(data),
+    )
+
+
 @app.route("/journal")
 def journal_today():
     data = journal.load(journal_file())
     today = journal.today_iso()
-    entry = journal.get_entry_by_date(data, today)
-    return render_template(
-        "journal_entry.html", data=data, entry=entry, date=today,
-        sections=journal.active_sections(data),
-    )
+    return _render_entry(data, today)
+
+
+@app.route("/journal/<date>")
+def journal_entry(date):
+    data = journal.load(journal_file())
+    if not journal._valid_date(date):
+        return redirect(url_for("journal_today"))
+    return _render_entry(data, date)
+
+
+def _parse_entry_form(form, data):
+    """Build {section_id: [tags]} and {section_id: value} from the form, and
+    register any 'permanent' new tags. Only active sections are read here."""
+    tags, numbers = {}, {}
+    for s in journal.active_sections(data):
+        sid = s["id"]
+        if s["type"] == "tag":
+            selected = list(form.getlist(f"tag:{sid}"))
+            new_name = (form.get(f"newtag-name:{sid}") or "").strip()
+            if new_name:
+                if form.get(f"newtag-kind:{sid}") == "permanent":
+                    journal.add_section_tag(data, sid, new_name)  # may raise
+                selected.append(new_name)
+            if selected:
+                tags[sid] = selected
+        else:
+            raw = (form.get(f"num:{sid}") or "").strip()
+            if raw != "":
+                numbers[sid] = raw
+    return tags, numbers
+
+
+@app.route("/journal/save", methods=["POST"])
+def journal_save():
+    date = (request.form.get("date") or "").strip()
+    title = request.form.get("title", "")
+    body = request.form.get("body", "")
+    data = journal.load(journal_file())
+    # Preserve any data on archived sections (not shown on the form).
+    existing = journal.get_entry_by_date(data, date)
+    base_tags = dict(existing["tags"]) if existing else {}
+    base_numbers = dict(existing["numbers"]) if existing else {}
+    try:
+        parsed_tags, parsed_numbers = _parse_entry_form(request.form, data)
+        for s in journal.active_sections(data):
+            sid = s["id"]
+            if s["type"] == "tag":
+                base_tags.pop(sid, None)
+                if sid in parsed_tags:
+                    base_tags[sid] = parsed_tags[sid]
+            else:
+                base_numbers.pop(sid, None)
+                if sid in parsed_numbers:
+                    base_numbers[sid] = parsed_numbers[sid]
+        journal.upsert_entry(data, date, title, body,
+                             tags=base_tags, numbers=base_numbers)
+        journal.save(journal_file(), data)
+    except ValueError:
+        flash("Could not save entry: check the date, title, tags, and numbers.")
+        return redirect(url_for("journal_entry", date=date) if journal._valid_date(date)
+                        else url_for("journal_today"))
+    return redirect(url_for("journal_entry", date=date))
 
 
 @app.route("/journal/entries")
