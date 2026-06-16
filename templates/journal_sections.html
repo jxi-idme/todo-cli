@@ -59,7 +59,8 @@
       <form class="delete-section" method="post"
             action="{{ url_for('journal_section_delete', section_id=s.id) }}">
         <button type="submit" class="delete"
-                onclick="return confirm('Archive this section? Existing entries keep their data.')">
+                data-confirm="Archive this section? Existing entries keep their data."
+                data-confirm-label="Archive">
           archive section
         </button>
       </form>

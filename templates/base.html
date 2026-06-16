@@ -95,6 +95,77 @@
       colorInput.addEventListener('input', sync);
       sync();  // initial render
     });
+
+    // Global dark confirm modal — available as window.confirmModal(msg, label).
+    // Any button with data-confirm="message" is auto-wired: clicking it shows
+    // the modal and only submits its form if the user confirms.
+    (function () {
+      var _overlay = null;
+
+      function _build() {
+        var ov = document.createElement('div');
+        ov.className = 'modal-overlay';
+        ov.hidden = true;
+        var box = document.createElement('div');
+        box.className = 'modal';
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-modal', 'true');
+        var msg = document.createElement('p');
+        msg.className = 'modal-msg';
+        var actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'modal-cancel';
+        cancelBtn.textContent = 'Cancel';
+        var confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'modal-confirm';
+        confirmBtn.textContent = 'Continue';
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        box.appendChild(msg);
+        box.appendChild(actions);
+        ov.appendChild(box);
+        document.body.appendChild(ov);
+        return { overlay: ov, msg: msg, cancelBtn: cancelBtn, confirmBtn: confirmBtn };
+      }
+
+      window.confirmModal = function (message, confirmLabel) {
+        if (!_overlay) _overlay = _build();
+        var o = _overlay;
+        o.msg.textContent = message;
+        o.confirmBtn.textContent = confirmLabel || 'Continue';
+        o.overlay.hidden = false;
+        return new Promise(function (resolve) {
+          function cleanup() {
+            o.overlay.hidden = true;
+            o.cancelBtn.removeEventListener('click', onCancel);
+            o.confirmBtn.removeEventListener('click', onConfirm);
+            o.overlay.removeEventListener('click', onOv);
+            document.removeEventListener('keydown', onEsc);
+          }
+          function onConfirm() { cleanup(); resolve(true); }
+          function onCancel()  { cleanup(); resolve(false); }
+          function onOv(e) { if (e.target === o.overlay) { cleanup(); resolve(false); } }
+          function onEsc(e) { if (e.key === 'Escape') { cleanup(); resolve(false); } }
+          o.cancelBtn.addEventListener('click', onCancel);
+          o.confirmBtn.addEventListener('click', onConfirm);
+          o.overlay.addEventListener('click', onOv);
+          document.addEventListener('keydown', onEsc);
+        });
+      };
+
+      // Auto-wire buttons that carry data-confirm="message".
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-confirm]');
+        if (!btn) return;
+        e.preventDefault();
+        var form = btn.form || btn.closest('form');
+        window.confirmModal(btn.dataset.confirm, btn.dataset.confirmLabel || 'Continue')
+          .then(function (ok) { if (ok && form) form.submit(); });
+      });
+    }());
   </script>
   {% block scripts %}{% endblock %}
 </body>

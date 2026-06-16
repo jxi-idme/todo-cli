@@ -61,10 +61,16 @@
             </div>
             <div class="newtag">
               <input type="text" name="newtag-name:{{ s.id }}" placeholder="new tag">
-              <select name="newtag-kind:{{ s.id }}">
-                <option value="permanent">permanent</option>
-                <option value="temporary">temporary</option>
-              </select>
+              <div class="kind-toggle">
+                <label class="kind-opt">
+                  <input type="radio" name="newtag-kind:{{ s.id }}" value="permanent" checked>
+                  <span>permanent</span>
+                </label>
+                <label class="kind-opt">
+                  <input type="radio" name="newtag-kind:{{ s.id }}" value="temporary">
+                  <span>temporary</span>
+                </label>
+              </div>
             </div>
           </div>
         {% endfor %}

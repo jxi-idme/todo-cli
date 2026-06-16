@@ -513,7 +513,11 @@ h2 {
 .section .chip.temp { border-style: dashed; font-style: italic; color: var(--muted); }
 .section .newtag { margin-top: 0.6rem; display: flex; gap: 0.4rem; }
 .section .newtag input { flex: 1; min-width: 0; }
-.section .newtag select { flex: 0 0 auto; min-width: 7.5rem; }
+.kind-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; flex: 0 0 auto; }
+.kind-opt { display: flex; align-items: center; cursor: pointer; padding: 0.45rem 0.65rem; font-size: 0.82rem; color: var(--muted); white-space: nowrap; transition: background 0.1s, color 0.1s; }
+.kind-opt + .kind-opt { border-left: 1px solid var(--border); }
+.kind-opt input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+.kind-opt:has(input:checked) { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
 
 /* ----- past entries ----- */
 .entry-list { list-style: none; padding: 0; }

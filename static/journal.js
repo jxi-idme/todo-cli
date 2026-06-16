@@ -256,7 +256,7 @@
     if (isSaved) {
       // Saved entry: navigate to that day, with dirty-check
       if (dirty) {
-        confirmModal('You have unsaved changes that will be lost. Continue?')
+        window.confirmModal('You have unsaved changes that will be lost. Continue?')
           .then(function (confirmed) {
             if (confirmed) {
               closePopover();
@@ -293,83 +293,6 @@
         closePopover();
       }
     }
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Dark confirm modal                                                   */
-  /* ------------------------------------------------------------------ */
-
-  var modalOverlay = null;
-
-  function buildModal() {
-    var overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.hidden = true;
-
-    var box = document.createElement('div');
-    box.className = 'modal';
-    box.setAttribute('role', 'dialog');
-    box.setAttribute('aria-modal', 'true');
-
-    var msg = document.createElement('p');
-    msg.className = 'modal-msg';
-
-    var actions = document.createElement('div');
-    actions.className = 'modal-actions';
-
-    var cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'modal-cancel';
-    cancelBtn.textContent = 'Cancel';
-
-    var confirmBtn = document.createElement('button');
-    confirmBtn.type = 'button';
-    confirmBtn.className = 'modal-confirm';
-    confirmBtn.textContent = 'Continue';
-
-    actions.appendChild(cancelBtn);
-    actions.appendChild(confirmBtn);
-    box.appendChild(msg);
-    box.appendChild(actions);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-
-    return { overlay: overlay, msg: msg, cancelBtn: cancelBtn, confirmBtn: confirmBtn };
-  }
-
-  /** Show the dark confirm modal. Returns a Promise<bool>.
-      `confirmLabel` customizes the confirm button text (default "Continue"). */
-  function confirmModal(message, confirmLabel) {
-    if (!modalOverlay) {
-      var built = buildModal();
-      modalOverlay = built;
-    }
-    var o = modalOverlay;
-    o.msg.textContent = message;
-    o.confirmBtn.textContent = confirmLabel || 'Continue';
-    o.overlay.hidden = false;
-
-    return new Promise(function (resolve) {
-      function cleanup() {
-        o.overlay.hidden = true;
-        o.cancelBtn.removeEventListener('click', onCancel);
-        o.confirmBtn.removeEventListener('click', onConfirm);
-        o.overlay.removeEventListener('click', onOverlayClick);
-        document.removeEventListener('keydown', onEsc);
-      }
-      function onConfirm() { cleanup(); resolve(true);  }
-      function onCancel()  { cleanup(); resolve(false); }
-      function onOverlayClick(e) {
-        if (e.target === o.overlay) { cleanup(); resolve(false); }
-      }
-      function onEsc(e) {
-        if (e.key === 'Escape') { cleanup(); resolve(false); }
-      }
-      o.cancelBtn.addEventListener('click',  onCancel);
-      o.confirmBtn.addEventListener('click', onConfirm);
-      o.overlay.addEventListener('click',    onOverlayClick);
-      document.addEventListener('keydown',   onEsc);
-    });
   }
 
   /* ------------------------------------------------------------------ */
