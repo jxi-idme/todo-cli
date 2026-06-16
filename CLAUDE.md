@@ -22,7 +22,7 @@ pytest tests/test_journal_app.py         # journal route tests only
 pytest -k time_remaining                 # single test by name substring
 ```
 
-macOS shortcut: double-click `TodoPup.command` to launch the app and open the browser (its first run bootstraps the venv).
+macOS dock app: click **TodoPup** in the dock (Automator app at `/Applications/TodoPup.app`). The server starts as a background daemon and auto-quits ~30 s after the last browser tab is closed. See `SETUP.md` for first-time installation.
 
 ## Architecture
 
@@ -38,7 +38,10 @@ design rule is a **strict split between pure logic and the HTTP layer**:
 - **`app.py`** — thin HTTP layer only: parse request, call domain module, render
   template, redirect. All state-changing routes use **Post/Redirect/Get** and
   `flash()` for validation errors. Config keys `DATA_FILE` and `JOURNAL_FILE` let
-  tests point at temp files.
+  tests point at temp files. Also owns the auto-quit watchdog (see below).
+- **`start_server.py`** — double-fork daemon launcher used by `TodoPup.command`
+  and the Automator dock app. Starts Flask detached from the calling process so
+  macOS Shortcuts/Automator exits immediately rather than waiting for Flask.
 
 ### Data files
 
@@ -49,6 +52,8 @@ design rule is a **strict split between pure logic and the HTTP layer**:
 Both use forgiving `load()` (missing keys defaulted, corrupt files backed up to
 `.bak`) and atomic `save()` (temp file + `os.replace`). Extend `load()` and
 `_empty()` whenever you add a new top-level key or field.
+
+- **`data/server.log`** — Flask stdout/stderr when launched via the dock app.
 
 ---
 
@@ -170,6 +175,31 @@ Tests are written first (TDD). Unit tests use a fixed `now` and pytest's
 data file. Initialize stores with `todo._empty()` / `journal._empty()` rather
 than hand-built dicts. Preserve the injectable `now` pattern in any new
 time-sensitive logic.
+
+---
+
+## Auto-quit (dock app mode)
+
+When Flask is started with `AUTO_QUIT=1` (set by `start_server.py`), a
+background watchdog thread in `app.py` monitors browser activity:
+
+- `GET /heartbeat` — no-op 204 route; resets the idle timer and arms the watchdog
+- Every open browser tab pings `/heartbeat` every 10 s (inline `setInterval` in
+  `base.html`)
+- If no ping arrives for 30 s after the first one, `os.kill(os.getpid(), SIGTERM)`
+  shuts the server down cleanly
+
+The watchdog only activates after the first heartbeat, so the server never
+auto-quits before any browser tab has loaded. Tests don't set `AUTO_QUIT=1` so
+they are unaffected.
+
+### Related files
+
+- `start_server.py` — double-fork daemon; sets `AUTO_QUIT=1` before `execv`
+- `TodoPup.command` — calls `start_server.py`, polls until ready, opens browser
+- `docs/automator/document.wflow` — Automator app embedded script (same logic)
+- `docs/automator/install.sh` — installs `/Applications/TodoPup.app` from repo
+- `SETUP.md` — full setup instructions for a new machine
 
 ---
 
