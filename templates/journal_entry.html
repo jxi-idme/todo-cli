@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block brand_mascot %}
+  <img class="mascot" src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+       width="56" height="56" alt="pompompurin">
+{% endblock %}
+{% block brand_title %}
+  <span class="site-title">journal</span>
+{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('journal_today') }}">New entry</a>
+  <a href="{{ url_for('journal_search') }}">Search</a>
+  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+{% endblock %}
+{% block content %}
+  <form class="journal-form" method="post" action="{{ url_for('journal_save') }}">
+    <div class="top-line">
+      <input type="text" name="title" placeholder="entry title" required
+             value="{{ entry.title if entry else '' }}">
+      <div class="cal-field"
+           data-current-date="{{ date }}"
+           data-is-saved="{{ 'true' if entry else 'false' }}">
+        <button type="button" class="cal-trigger" aria-haspopup="dialog">
+          <span class="cal-trigger-label">{{ date }}</span>
+          <span class="cal-caret">▾</span>
+        </button>
+        <input type="hidden" name="date" class="cal-input" value="{{ date }}">
+      </div>
+    </div>
+
+    <p class="label">What happened today</p>
+    <textarea name="body" placeholder="the day's events…">{{ entry.body if entry else '' }}</textarea>
+
+    {% set tag_sections = sections | selectattr('type', 'equalto', 'tag') | list %}
+    {% set num_sections = sections | selectattr('type', 'equalto', 'numeric') | list %}
+
+    {% if tag_sections %}
+      <p class="label">Tag the day</p>
+      <div class="sections">
+        {% for s in tag_sections %}
+          {% set fg = text_color_for(s.color) %}
+          {% set selected = entry.tags[s.id] if entry and entry.tags.get(s.id) is not none else [] %}
+          <div class="section" style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
+            <h3>{{ s.name }}</h3>
+            <div class="chips">
+              {# Registered (permanent) tags as toggle chips. #}
+              {% for tag in s.tags %}
+                <label class="chip tag-toggle">
+                  <input type="checkbox" name="tag:{{ s.id }}" value="{{ tag }}"
+                         {% if tag in selected %}checked{% endif %}> {{ tag }}
+                </label>
+              {% endfor %}
+              {# Tags on the entry that are NOT in the master list (temporary or
+                 since-deleted) render as dashed, pre-checked chips. #}
+              {% for tag in selected %}
+                {% if not is_registered_tag(data, s.id, tag) %}
+                  <label class="chip temp tag-toggle">
+                    <input type="checkbox" name="tag:{{ s.id }}" value="{{ tag }}" checked> {{ tag }}
+                  </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+            <div class="newtag">
+              <input type="text" name="newtag-name:{{ s.id }}" placeholder="new tag">
+              <select name="newtag-kind:{{ s.id }}">
+                <option value="permanent">permanent</option>
+                <option value="temporary">temporary</option>
+              </select>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if num_sections %}
+      <p class="label">Track numbers</p>
+      <div class="sections">
+        {% for s in num_sections %}
+          {% set val = entry.numbers[s.id] if entry and entry.numbers.get(s.id) is not none else '' %}
+          <div class="num-section">
+            <h3>{{ s.name }}</h3>
+            <div class="num-field">
+              <input type="number" step="any" name="num:{{ s.id }}" value="{{ val }}">
+              <span class="unit">{{ s.unit or '' }}</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="actions">
+      <button type="submit" class="save">{{ "Update entry" if entry else "Save entry" }}</button>
+    </div>
+  </form>
+
+  {% if entry %}
+    <div class="move-row">
+      <button type="button" class="move-btn">Move entry to another day…</button>
+      <button type="button" class="delete-entry-btn">Delete entry</button>
+    </div>
+    <form id="move-form" method="post"
+          action="{{ url_for('journal_entry_move', entry_id=entry.id) }}">
+      <input type="hidden" name="date" class="move-input">
+    </form>
+    <form id="delete-form" method="post"
+          action="{{ url_for('journal_entry_delete', entry_id=entry.id) }}"></form>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script type="application/json" id="entry-dates-data">{{ entry_dates | tojson }}</script>
+  <script src="{{ url_for('static', filename='journal.js') }}" defer></script>
+{% endblock %}

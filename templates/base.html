@@ -9,15 +9,30 @@
 <body>
   <header>
     <div class="brand">
-      <!-- Mascot image lives in static/img/mascot.gif -->
-      <img class="mascot" src="{{ url_for('static', filename='img/mascot.gif') }}"
-           width="56" height="56" alt="Mascot">
-      <span class="site-title">todo&middot;pup</span>
+      {# The brand mascot IS the toggle: click it to switch Tasks <-> Journal,
+         with a directional caption underneath. Pages swap only the mascot
+         image (brand_mascot) and the title text (brand_title). #}
+      <a class="brand-toggle"
+         href="{{ url_for('index') if in_journal else url_for('journal_today') }}"
+         title="Switch between Tasks and Journal">
+        <span class="brand-mascot-stack">
+          {% block brand_mascot %}
+          <img class="mascot" src="{{ url_for('static', filename='img/mascot.gif') }}"
+               width="56" height="56" alt="Mascot">
+          {% endblock %}
+          <span class="brand-switch">{{ 'todo' if in_journal else 'journal' }} &rarr;</span>
+        </span>
+        {% block brand_title %}
+        <span class="site-title">todo&middot;pup</span>
+        {% endblock %}
+      </a>
     </div>
     <nav>
+      {% block nav %}
       <a href="{{ url_for('index') }}">Active</a>
       <a href="{{ url_for('archive') }}">Archive</a>
       <a href="{{ url_for('tags') }}">Manage tags</a>
+      {% endblock %}
     </nav>
   </header>
 
@@ -81,5 +96,6 @@
       sync();  // initial render
     });
   </script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

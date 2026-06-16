@@ -71,6 +71,32 @@ nav a:hover {
   border-bottom-color: var(--accent);
 }
 
+/* The brand mascot is the clickable toggle that switches Tasks <-> Journal,
+   with a directional caption ("journal ->" / "todo ->") stacked beneath it. */
+.brand-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: inherit;
+}
+.brand-mascot-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+.brand-mascot-stack .mascot {
+  transition: box-shadow 0.15s ease;
+}
+.brand-switch {
+  font-size: 0.72rem;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.brand-toggle:hover .brand-switch { color: var(--accent); }
+.brand-toggle:hover .mascot { box-shadow: 0 0 0 2px var(--accent); }
+
 /* ----- add / edit form ----- */
 .add-form {
   display: flex;
@@ -417,4 +443,560 @@ h2 {
   padding: 0.5rem 0.75rem;
   margin: 0.25rem 0;
   font-size: 0.9rem;
+}
+
+/* ===================== journal pages ===================== */
+/* (The brand-mascot toggle is styled above with .brand-toggle.) */
+
+/* ----- journal entry form ----- */
+.journal-form .top-line { display: flex; gap: 0.6rem; margin: 1.2rem 0 0.7rem; }
+.journal-form .top-line input[type="text"] { flex: 1; min-width: 0; }
+.journal-form textarea {
+  width: 100%; min-height: 140px; resize: vertical; margin-bottom: 1.2rem;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.55rem 0.7rem; font: inherit;
+}
+.label {
+  font-size: 0.72rem; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 0.5rem;
+}
+
+/* two-column section grid (tag + numeric) */
+.sections { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin-bottom: 1rem; }
+.section, .num-section {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 0.8rem 0.9rem;
+  min-width: 0;   /* let grid cells shrink instead of overflowing the 780px body */
+}
+.section h3, .num-section h3 { margin: 0 0 0.6rem; font-size: 0.95rem; color: var(--accent); }
+.num-section { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.num-section h3 { margin: 0; }
+.num-field { display: flex; align-items: center; gap: 0.4rem; }
+.num-field input { width: 90px; text-align: right; }
+.unit { color: var(--muted); font-size: 0.8rem; min-width: 42px; }
+
+.section .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.section .chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.6rem;
+  font-size: 0.82rem; cursor: pointer; user-select: none;
+}
+/* Two-tone check circle (these sit on tinted chips): a dark outer ring and a
+   lighter inner circle that turns green when selected. Overrides the tag-page
+   white ring here. Flex on the chip keeps it centered with the label text. */
+.section .chip input[type="checkbox"] {
+  margin: 0;
+  border-color: #2a2e37;        /* outer ring -- sits well against the page bg */
+  background-color: #cdd2da;     /* lighter inner circle */
+}
+.section .chip input[type="checkbox"]:checked {
+  background-color: #3fae5a;     /* turns green when clicked */
+}
+.section .chip:has(input:checked) {
+  background: color-mix(in srgb, var(--tag-bg) 22%, transparent);
+  border-color: var(--tag-bg);
+}
+.section .chip.temp { border-style: dashed; font-style: italic; color: var(--muted); }
+.section .newtag { margin-top: 0.6rem; display: flex; gap: 0.4rem; }
+.section .newtag input { flex: 1; min-width: 0; }
+
+/* ----- past entries ----- */
+.entry-list { list-style: none; padding: 0; }
+.entry-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+.entry-link { display: flex; gap: 0.8rem; text-decoration: none; color: var(--text); flex: 1; }
+.entry-date { color: var(--accent); }
+.entry-title { color: var(--text); }
+
+/* ----- manage sections ----- */
+.manage-section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 0.9rem; }
+.manage-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.unit-input { width: 130px; }
+.pill { font-size: 0.66rem; letter-spacing: 0.5px; text-transform: uppercase; border: 1px solid var(--border); border-radius: 6px; padding: 0.05rem 0.4rem; color: var(--muted); }
+.perm-tags { margin: 0.7rem 0; }
+.perm-chip { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.6rem; font-size: 0.82rem; margin: 0.2rem; }
+.perm-chip .x { background: none; border: none; color: var(--danger); cursor: pointer; font: inherit; }
+.addrow { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; align-items: center; }
+.delete-section { margin-top: 0.6rem; }
+.hint { color: var(--muted); font-size: 0.8rem; }
+
+/* ===================== journal search page ===================== */
+
+/* Search panel: card that holds the controls */
+.search-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  margin: 1.2rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+/* Top row of controls: text input + tag dropdown */
+.search-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.search-controls #q {
+  flex: 1 1 220px;
+  min-width: 140px;
+}
+
+/* ---- Tag dropdown ---- */
+.tag-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.tag-dropdown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.tag-dropdown-btn:hover,
+.tag-dropdown-btn:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.tag-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 0.75rem;
+  min-width: 200px;
+  max-width: 340px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.tag-dropdown-group-label {
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.5rem 0 0.3rem;
+}
+
+.tag-dropdown-group-label:first-child {
+  margin-top: 0;
+}
+
+.tag-dropdown-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.tag-dropdown-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Chips inside the dropdown get the same two-tone circle as the entry form */
+.tag-dropdown-panel .chip.tag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tag-dropdown-panel .chip.tag-toggle input[type="checkbox"] {
+  margin: 0;
+  border-color: #2a2e37;
+  background-color: #cdd2da;
+}
+
+.tag-dropdown-panel .chip.tag-toggle input[type="checkbox"]:checked {
+  background-color: #3fae5a;
+}
+
+.tag-dropdown-panel .chip.tag-toggle:has(input:checked) {
+  background: color-mix(in srgb, var(--tag-bg) 22%, transparent);
+  border-color: var(--tag-bg);
+}
+
+/* ---- Numeric range filters ---- */
+.num-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.2rem;
+}
+
+.num-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 180px;
+  flex: 1 1 180px;
+}
+
+.num-filter-disabled {
+  opacity: 0.5;
+}
+
+.num-filter-label {
+  font-size: 0.8rem;
+  color: var(--accent);
+  letter-spacing: 0.3px;
+}
+
+/* Dual-range slider: two overlapping range inputs */
+.dual-range {
+  position: relative;
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.dual-range input[type="range"] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  height: 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The first (min) slider sits on top; pointer-events let both be draggable */
+.dual-range input[type="range"]:first-child { z-index: 2; }
+.dual-range input[type="range"]:last-child  { z-index: 1; }
+
+.range-readout {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* ---- Result count ---- */
+.result-count {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0 0 0.6rem;
+}
+
+/* ---- Entry rows (reuse .entry-list/.entry-row/.entry-link from below) ---- */
+
+/* Small tag chips in the search results */
+.entry-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.entry-tag-chip {
+  font-size: 0.72rem;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+
+.entry-nums {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.entry-num {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.entry-delete-form {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* ===================== custom dark calendar widget ===================== */
+
+/* The wrapper that holds the trigger button + popover. Positioned so the
+   popover can be absolutely placed relative to it. */
+.cal-field {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Trigger button: looks like the other inputs, amber on hover. */
+.cal-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.cal-trigger:hover,
+.cal-trigger:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.cal-caret {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Popover panel: floats below the trigger. */
+.cal-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 0.75rem;
+  min-width: 240px;
+  user-select: none;
+}
+
+/* Header row: prev / month-year / next. */
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.55rem;
+}
+
+.cal-month-title {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+
+.cal-nav {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.cal-nav:hover {
+  color: var(--accent);
+  background: none;
+  border: none;
+}
+
+/* 7-column grid for weekdays + day cells. */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.2rem 0;
+}
+
+/* Each day cell is a small flex column so the dot sits under the number. */
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 3px 2px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text);
+  transition: background 0.1s ease;
+}
+
+.cal-day-blank {
+  cursor: default;
+}
+
+.cal-day:not(.cal-day-blank):not(.is-disabled):hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+/* Today gets an amber border. */
+.cal-day.is-today {
+  border: 1px solid var(--accent);
+}
+
+/* Selected day gets a subtle amber fill. */
+.cal-day.is-selected {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--accent);
+}
+
+.cal-day.is-selected:hover {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Disabled days (occupied, shown in move mode). */
+.cal-day.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Entry dot: small amber circle below the number. */
+.cal-day-num {
+  line-height: 1;
+}
+
+.cal-dot {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* ---- Move-entry row & button ---- */
+.move-row {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.move-btn,
+.delete-entry-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.move-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: none;
+}
+
+.delete-entry-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: none;
+}
+
+/* ---- Dark confirm modal ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  max-width: 360px;
+  width: 90%;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+.modal-msg {
+  margin: 0 0 1rem;
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.modal-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.modal-cancel:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: none;
+}
+
+.modal-confirm {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #1a1a1a;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.modal-confirm:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #1a1a1a;
 }

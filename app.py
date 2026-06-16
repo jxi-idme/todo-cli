@@ -9,6 +9,7 @@ import os
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
+import journal
 import todo
 
 app = Flask(__name__)
@@ -28,6 +29,21 @@ app.config["DATA_FILE"] = os.path.join(
 
 def data_file():
     return app.config["DATA_FILE"]
+
+
+# Journal store lives alongside tasks; tests override via JOURNAL_FILE.
+app.config["JOURNAL_FILE"] = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "journal.json"
+)
+
+
+def journal_file():
+    return app.config["JOURNAL_FILE"]
+
+
+# Local single-user dev app: pick up template edits without restarting the
+# server (Flask otherwise caches compiled templates when not run with --debug).
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 
 def _recurrence_from_form(form):
@@ -79,6 +95,14 @@ app.jinja_env.globals["time_remaining"] = todo.time_remaining
 app.jinja_env.globals["is_overdue"] = todo.is_overdue
 app.jinja_env.globals["tag_color"] = todo.tag_color
 app.jinja_env.globals["text_color_for"] = todo.text_color_for
+app.jinja_env.globals["section_color"] = journal.section_color
+app.jinja_env.globals["is_registered_tag"] = journal.is_registered_tag
+
+
+@app.context_processor
+def inject_section_context():
+    endpoint = request.endpoint or ""
+    return {"in_journal": endpoint.startswith("journal")}
 
 
 @app.route("/")
@@ -221,6 +245,138 @@ def tag_delete(name):
     todo.save(data_file(), data)
     flash("Tag deleted.")
     return redirect(url_for("tags"))
+
+
+def _render_entry(data, date):
+    return render_template(
+        "journal_entry.html", data=data,
+        entry=journal.get_entry_by_date(data, date),
+        date=date, sections=journal.active_sections(data),
+        entry_dates=journal.entry_dates(data),
+    )
+
+
+@app.route("/journal")
+def journal_today():
+    data = journal.load(journal_file())
+    today = journal.today_iso()
+    return _render_entry(data, today)
+
+
+@app.route("/journal/<date>")
+def journal_entry(date):
+    data = journal.load(journal_file())
+    if not journal._valid_date(date):
+        return redirect(url_for("journal_today"))
+    return _render_entry(data, date)
+
+
+def _collect_entry_fields(form, data):
+    """Build {section_id: [tags]} and {section_id: value} from the form.
+
+    As a side effect, registers any new 'permanent' tags on their section in
+    the data store (mirroring how _tags_with_new works for tasks). Only active
+    sections are read here."""
+    tags, numbers = {}, {}
+    for s in journal.active_sections(data):
+        sid = s["id"]
+        if s["type"] == "tag":
+            selected = list(form.getlist(f"tag:{sid}"))
+            new_name = (form.get(f"newtag-name:{sid}") or "").strip()
+            if new_name:
+                if form.get(f"newtag-kind:{sid}") == "permanent":
+                    journal.add_section_tag(data, sid, new_name)  # may raise
+                selected.append(new_name)
+            if selected:
+                tags[sid] = selected
+        else:
+            raw = (form.get(f"num:{sid}") or "").strip()
+            if raw != "":
+                numbers[sid] = raw
+    return tags, numbers
+
+
+@app.route("/journal/save", methods=["POST"])
+def journal_save():
+    date = (request.form.get("date") or "").strip()
+    title = request.form.get("title", "")
+    body = request.form.get("body", "")
+    if not journal._valid_date(date):
+        flash("Could not save entry: please pick a valid date.")
+        return redirect(url_for("journal_today"))
+    if not title.strip():
+        flash("Could not save entry: a title is required.")
+        return redirect(url_for("journal_entry", date=date))
+    data = journal.load(journal_file())
+    # Preserve any data on archived sections (not shown on the form).
+    existing = journal.get_entry_by_date(data, date)
+    base_tags = dict(existing["tags"]) if existing else {}
+    base_numbers = dict(existing["numbers"]) if existing else {}
+    try:
+        parsed_tags, parsed_numbers = _collect_entry_fields(request.form, data)
+        for s in journal.active_sections(data):
+            sid = s["id"]
+            if s["type"] == "tag":
+                base_tags.pop(sid, None)
+                if sid in parsed_tags:
+                    base_tags[sid] = parsed_tags[sid]
+            else:
+                base_numbers.pop(sid, None)
+                if sid in parsed_numbers:
+                    base_numbers[sid] = parsed_numbers[sid]
+        journal.upsert_entry(data, date, title, body,
+                             tags=base_tags, numbers=base_numbers)
+        journal.save(journal_file(), data)
+    except ValueError:
+        flash("Could not save entry: check the date, title, tags, and numbers.")
+        return redirect(url_for("journal_entry", date=date) if journal._valid_date(date)
+                        else url_for("journal_today"))
+    return redirect(url_for("journal_entry", date=date))
+
+
+@app.route("/journal/entry/<entry_id>/move", methods=["POST"])
+def journal_entry_move(entry_id):
+    new_date = (request.form.get("date") or "").strip()
+    data = journal.load(journal_file())
+    # Look up the entry's current date for the fallback redirect.
+    existing = next((e for e in data.get("entries", []) if e.get("id") == entry_id), None)
+    current_date = existing["date"] if existing else None
+    try:
+        journal.move_entry(data, entry_id, new_date)
+        journal.save(journal_file(), data)
+        return redirect(url_for("journal_entry", date=new_date))
+    except ValueError:
+        flash("Could not move entry: that day already has an entry.")
+        fallback = current_date or journal.today_iso()
+        return redirect(url_for("journal_entry", date=fallback))
+
+
+@app.route("/journal/search")
+def journal_search():
+    data = journal.load(journal_file())
+    return render_template(
+        "journal_search.html", data=data,
+        entries=journal.search_index(data),
+        tag_sections=[s for s in journal.active_sections(data) if s["type"] == "tag"],
+        num_sections=[s for s in journal.active_sections(data) if s["type"] == "numeric"],
+        bounds=journal.numeric_bounds(data),
+    )
+
+
+@app.route("/journal/entry/<entry_id>/delete", methods=["POST"])
+def journal_entry_delete(entry_id):
+    data = journal.load(journal_file())
+    journal.delete_entry(data, entry_id)
+    journal.save(journal_file(), data)
+    flash("Entry deleted.")
+    return redirect(url_for("journal_search"))
+
+
+@app.route("/journal/sections")
+def journal_sections():
+    data = journal.load(journal_file())
+    return render_template("journal_sections.html", data=data,
+                           sections=journal.active_sections(data))
 
 
 if __name__ == "__main__":

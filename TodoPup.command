@@ -20,6 +20,18 @@ if [ ! -d ".venv" ]; then
   fi
 fi
 
+# Stop any server already listening on this port, so re-launching never hits
+# "Address already in use" -- we just take over the port.
+EXISTING=$(lsof -ti "tcp:${PORT}" 2>/dev/null)
+if [ -n "$EXISTING" ]; then
+  echo "Stopping the server already running on port ${PORT} (PID: ${EXISTING})..."
+  kill $EXISTING 2>/dev/null
+  # Give it a moment to release the port; force-kill anything still holding on.
+  sleep 1
+  STILL=$(lsof -ti "tcp:${PORT}" 2>/dev/null)
+  [ -n "$STILL" ] && kill -9 $STILL 2>/dev/null
+fi
+
 # Open the browser a couple seconds after the server starts.
 ( sleep 2 && open "$URL" ) &
 
