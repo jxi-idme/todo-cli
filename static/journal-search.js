@@ -3,7 +3,7 @@
 
    Filter types:
      - Text: whitespace-split query → whole-word, case-insensitive AND match
-             against entry body.
+             against the entry title + body.
      - Tags: multi-select dropdown, OR semantics (entry passes if any selected
              tag is in entry.tags).
      - Numbers: per numeric section dual-range slider; active only when a
@@ -58,12 +58,12 @@
     ENTRIES.forEach(function (entry) {
       var visible = true;
 
-      /* ---- Text filter: AND over whole-word matches in body ---- */
+      /* ---- Text filter: AND over whole-word matches in title + body ---- */
       if (words.length > 0) {
-        var bodyLower = (entry.body || '').toLowerCase();
+        var haystack = ((entry.title || '') + ' ' + (entry.body || '')).toLowerCase();
         for (var i = 0; i < words.length; i++) {
           var re = new RegExp('\\b' + escapeRegExp(words[i].toLowerCase()) + '\\b');
-          if (!re.test(bodyLower)) {
+          if (!re.test(haystack)) {
             visible = false;
             break;
           }

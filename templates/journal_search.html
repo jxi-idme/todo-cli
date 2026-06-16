@@ -94,10 +94,6 @@
               {% endfor %}
             </span>
           {% endif %}
-          <form method="post" action="{{ url_for('journal_entry_delete', entry_id=e.id) }}"
-                class="entry-delete-form">
-            <button type="submit" class="delete" title="Delete entry">×</button>
-          </form>
         </li>
       {% endfor %}
     </ul>
