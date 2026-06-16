@@ -929,11 +929,22 @@ h2 {
   flex-shrink: 0;
 }
 
-/* ---- Move-entry row & button ---- */
-.move-row {
-  margin-top: 0.75rem;
+/* ---- Entry action row (save / move / delete — always one line) ---- */
+.entry-actions {
   display: flex;
   gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.entry-actions .save,
+.move-btn,
+.delete-entry-btn {
+  flex: 1;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.7rem;
+  text-align: center;
 }
 
 .move-btn,
@@ -941,10 +952,6 @@ h2 {
   background: none;
   border: 1px solid var(--border);
   color: var(--muted);
-  font-size: 0.85rem;
-  padding: 0.35rem 0.7rem;
-  border-radius: 4px;
-  cursor: pointer;
 }
 
 .move-btn:hover {

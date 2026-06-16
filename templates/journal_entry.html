@@ -12,7 +12,7 @@
   <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
 {% endblock %}
 {% block content %}
-  <form class="journal-form" method="post" action="{{ url_for('journal_save') }}">
+  <form id="journal-form" class="journal-form" method="post" action="{{ url_for('journal_save') }}">
     <div class="top-line">
       <input type="text" name="title" placeholder="entry title" required
              value="{{ entry.title if entry else '' }}">
@@ -93,23 +93,21 @@
       </div>
     {% endif %}
 
-    <div class="actions">
-      <button type="submit" class="save">{{ "Update entry" if entry else "Save entry" }}</button>
-    </div>
   </form>
 
-  {% if entry %}
-    <div class="move-row">
+  <div class="entry-actions">
+    <button type="submit" form="journal-form" class="save">{{ "Update entry" if entry else "Save entry" }}</button>
+    {% if entry %}
       <button type="button" class="move-btn">Move entry to another day…</button>
       <button type="button" class="delete-entry-btn">Delete entry</button>
-    </div>
-    <form id="move-form" method="post"
-          action="{{ url_for('journal_entry_move', entry_id=entry.id) }}">
-      <input type="hidden" name="date" class="move-input">
-    </form>
-    <form id="delete-form" method="post"
-          action="{{ url_for('journal_entry_delete', entry_id=entry.id) }}"></form>
-  {% endif %}
+      <form id="move-form" method="post"
+            action="{{ url_for('journal_entry_move', entry_id=entry.id) }}">
+        <input type="hidden" name="date" class="move-input">
+      </form>
+      <form id="delete-form" method="post"
+            action="{{ url_for('journal_entry_delete', entry_id=entry.id) }}"></form>
+    {% endif %}
+  </div>
 {% endblock %}
 
 {% block scripts %}
