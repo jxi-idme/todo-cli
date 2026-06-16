@@ -16,7 +16,6 @@
     <h2>Manage sections &amp; tags</h2>
     <a class="archive-link" href="{{ url_for('journal_sections_archive') }}">Archive</a>
   </div>
-  <p class="hint">Removing a permanent tag only hides it from the entry form — existing entries keep their data.</p>
 
   {% for s in sections %}
     {% set fg = text_color_for(s.color) %}
