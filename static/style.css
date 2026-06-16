@@ -450,7 +450,7 @@ h2 {
 
 /* ----- journal entry form ----- */
 .journal-form .top-line { display: flex; gap: 0.6rem; margin: 1.2rem 0 0.7rem; }
-.journal-form .top-line input[type="text"] { flex: 1; }
+.journal-form .top-line input[type="text"] { flex: 1; min-width: 0; }
 .journal-form textarea {
   width: 100%; min-height: 140px; resize: vertical; margin-bottom: 1.2rem;
   background: var(--panel); color: var(--text); border: 1px solid var(--border);
@@ -466,6 +466,7 @@ h2 {
 .section, .num-section {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; padding: 0.8rem 0.9rem;
+  min-width: 0;   /* let grid cells shrink instead of overflowing the 780px body */
 }
 .section h3, .num-section h3 { margin: 0 0 0.6rem; font-size: 0.95rem; color: var(--accent); }
 .num-section { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
@@ -486,7 +487,7 @@ h2 {
 }
 .section .chip.temp { border-style: dashed; font-style: italic; color: var(--muted); }
 .section .newtag { margin-top: 0.6rem; display: flex; gap: 0.4rem; }
-.section .newtag input { flex: 1; }
+.section .newtag input { flex: 1; min-width: 0; }
 
 /* ----- past entries ----- */
 .entry-list { list-style: none; padding: 0; }
