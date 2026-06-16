@@ -906,9 +906,11 @@ h2 {
 .move-row {
   margin-top: 0.75rem;
   display: flex;
+  gap: 0.5rem;
 }
 
-.move-btn {
+.move-btn,
+.delete-entry-btn {
   background: none;
   border: 1px solid var(--border);
   color: var(--muted);
@@ -921,6 +923,12 @@ h2 {
 .move-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+  background: none;
+}
+
+.delete-entry-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
   background: none;
 }
 

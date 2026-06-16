@@ -95,11 +95,14 @@
   {% if entry %}
     <div class="move-row">
       <button type="button" class="move-btn">Move entry to another day…</button>
+      <button type="button" class="delete-entry-btn">Delete entry</button>
     </div>
     <form id="move-form" method="post"
           action="{{ url_for('journal_entry_move', entry_id=entry.id) }}">
       <input type="hidden" name="date" class="move-input">
     </form>
+    <form id="delete-form" method="post"
+          action="{{ url_for('journal_entry_delete', entry_id=entry.id) }}"></form>
   {% endif %}
 {% endblock %}
 

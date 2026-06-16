@@ -337,14 +337,16 @@
     return { overlay: overlay, msg: msg, cancelBtn: cancelBtn, confirmBtn: confirmBtn };
   }
 
-  /** Show the dark confirm modal. Returns a Promise<bool>. */
-  function confirmModal(message) {
+  /** Show the dark confirm modal. Returns a Promise<bool>.
+      `confirmLabel` customizes the confirm button text (default "Continue"). */
+  function confirmModal(message, confirmLabel) {
     if (!modalOverlay) {
       var built = buildModal();
       modalOverlay = built;
     }
     var o = modalOverlay;
     o.msg.textContent = message;
+    o.confirmBtn.textContent = confirmLabel || 'Continue';
     o.overlay.hidden = false;
 
     return new Promise(function (resolve) {
@@ -382,6 +384,19 @@
       openPopover(false);
     }
   });
+
+  // Delete entry: confirm via the dark modal, then submit the delete form.
+  var deleteBtn  = document.querySelector('.delete-entry-btn');
+  var deleteForm = document.getElementById('delete-form');
+  if (deleteBtn && deleteForm) {
+    deleteBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      confirmModal('Delete this entry? This cannot be undone.', 'Delete')
+        .then(function (confirmed) {
+          if (confirmed) deleteForm.submit();
+        });
+    });
+  }
 
   if (moveBtn) {
     moveBtn.addEventListener('click', function (e) {
