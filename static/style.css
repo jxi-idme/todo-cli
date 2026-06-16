@@ -444,3 +444,65 @@ h2 {
   margin: 0.25rem 0;
   font-size: 0.9rem;
 }
+
+/* ===================== journal pages ===================== */
+/* (The brand-mascot toggle is styled above with .brand-toggle.) */
+
+/* ----- journal entry form ----- */
+.journal-form .top-line { display: flex; gap: 0.6rem; margin: 1.2rem 0 0.7rem; }
+.journal-form .top-line input[type="text"] { flex: 1; }
+.journal-form textarea {
+  width: 100%; min-height: 140px; resize: vertical; margin-bottom: 1.2rem;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.55rem 0.7rem; font: inherit;
+}
+.label {
+  font-size: 0.72rem; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 0.5rem;
+}
+
+/* two-column section grid (tag + numeric) */
+.sections { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin-bottom: 1rem; }
+.section, .num-section {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 0.8rem 0.9rem;
+}
+.section h3, .num-section h3 { margin: 0 0 0.6rem; font-size: 0.95rem; color: var(--accent); }
+.num-section { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.num-section h3 { margin: 0; }
+.num-field { display: flex; align-items: center; gap: 0.4rem; }
+.num-field input { width: 90px; text-align: right; }
+.unit { color: var(--muted); font-size: 0.8rem; min-width: 42px; }
+
+.section .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.section .chip {
+  border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.6rem;
+  font-size: 0.82rem; cursor: pointer; user-select: none;
+}
+.section .chip input { margin-right: 0.25rem; }
+.section .chip:has(input:checked) {
+  background: color-mix(in srgb, var(--tag-bg) 22%, transparent);
+  border-color: var(--tag-bg);
+}
+.section .chip.temp { border-style: dashed; font-style: italic; color: var(--muted); }
+.section .newtag { margin-top: 0.6rem; display: flex; gap: 0.4rem; }
+.section .newtag input { flex: 1; }
+
+/* ----- past entries ----- */
+.entry-list { list-style: none; padding: 0; }
+.entry-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+.entry-link { display: flex; gap: 0.8rem; text-decoration: none; color: var(--text); flex: 1; }
+.entry-date { color: var(--accent); }
+.entry-title { color: var(--text); }
+
+/* ----- manage sections ----- */
+.manage-section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 0.9rem; }
+.manage-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.unit-input { width: 130px; }
+.pill { font-size: 0.66rem; letter-spacing: 0.5px; text-transform: uppercase; border: 1px solid var(--border); border-radius: 6px; padding: 0.05rem 0.4rem; color: var(--muted); }
+.perm-tags { margin: 0.7rem 0; }
+.perm-chip { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.6rem; font-size: 0.82rem; margin: 0.2rem; }
+.perm-chip .x { background: none; border: none; color: var(--danger); cursor: pointer; font: inherit; }
+.addrow { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; align-items: center; }
+.delete-section { margin-top: 0.6rem; }
+.hint { color: var(--muted); font-size: 0.8rem; }

@@ -1677,6 +1677,12 @@ git commit -m "Add journal sections management page (add/rename/color/unit/delet
 
 This task is visual; verify by eye rather than by unit test.
 
+> **STATUS: already applied during Group C** (commit pulling journal CSS
+> forward so the entry form was reviewable). All the CSS below is in
+> `static/style.css` except the `.puri-toggle`/`.mascot-puri` rules, which were
+> replaced by the `.brand-toggle` styling per the AMENDMENT. When executing,
+> skip this task's Step 1 unless something is missing; just verify by eye.
+
 - [ ] **Step 1: Append journal styles to `static/style.css`**
 
 ```css
