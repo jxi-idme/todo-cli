@@ -14,8 +14,11 @@
 {% block content %}
   <form id="journal-form" class="journal-form" method="post" action="{{ url_for('journal_save') }}" novalidate>
     <div class="top-line">
-      <input type="text" name="title" placeholder="entry title" required
-             value="{{ entry.title if entry else '' }}">
+      <div class="title-field">
+        <input type="text" name="title" placeholder="entry title" required
+               value="{{ entry.title if entry else '' }}">
+        <span class="field-error-bubble" id="title-error" hidden>Title is required.</span>
+      </div>
       <div class="cal-field"
            data-current-date="{{ date }}"
            data-is-saved="{{ 'true' if entry else 'false' }}">
@@ -26,7 +29,6 @@
         <input type="hidden" name="date" class="cal-input" value="{{ date }}">
       </div>
     </div>
-    <span class="field-error" id="title-error" hidden>Title is required.</span>
 
     <p class="label">What happened today</p>
     <textarea name="body" placeholder="the day's events…">{{ entry.body if entry else '' }}</textarea>

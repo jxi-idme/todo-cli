@@ -154,7 +154,43 @@ select:focus {
 }
 
 input.input-invalid { border-color: var(--danger); }
-.field-error { font-size: 0.8rem; color: var(--danger); margin-top: 0.25rem; display: block; }
+
+.title-field { position: relative; flex: 1; min-width: 0; }
+.title-field input { width: 100%; }
+
+.field-error-bubble {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  background: var(--panel);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.82rem;
+  color: var(--danger);
+  white-space: nowrap;
+  z-index: 100;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.field-error-bubble::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 14px;
+  border: 5px solid transparent;
+  border-bottom-color: var(--danger);
+  border-top: none;
+}
+.field-error-bubble::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 15px;
+  border: 4px solid transparent;
+  border-bottom-color: var(--panel);
+  border-top: none;
+}
 
 .custom-n {
   width: 90px;
@@ -466,8 +502,7 @@ h2 {
 /* (The brand-mascot toggle is styled above with .brand-toggle.) */
 
 /* ----- journal entry form ----- */
-.journal-form .top-line { display: flex; gap: 0.6rem; margin: 1.2rem 0 0.7rem; }
-.journal-form .top-line input[type="text"] { flex: 1; min-width: 0; }
+.journal-form .top-line { display: flex; gap: 0.6rem; margin: 1.2rem 0 0.7rem; align-items: flex-start; }
 .journal-form textarea {
   width: 100%; min-height: 140px; resize: vertical; margin-bottom: 1.2rem;
   background: var(--panel); color: var(--text); border: 1px solid var(--border);
