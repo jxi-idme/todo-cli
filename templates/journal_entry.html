@@ -12,7 +12,7 @@
   <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
 {% endblock %}
 {% block content %}
-  <form id="journal-form" class="journal-form" method="post" action="{{ url_for('journal_save') }}">
+  <form id="journal-form" class="journal-form" method="post" action="{{ url_for('journal_save') }}" novalidate>
     <div class="top-line">
       <input type="text" name="title" placeholder="entry title" required
              value="{{ entry.title if entry else '' }}">
@@ -26,6 +26,7 @@
         <input type="hidden" name="date" class="cal-input" value="{{ date }}">
       </div>
     </div>
+    <span class="field-error" id="title-error" hidden>Title is required.</span>
 
     <p class="label">What happened today</p>
     <textarea name="body" placeholder="the day's events…">{{ entry.body if entry else '' }}</textarea>

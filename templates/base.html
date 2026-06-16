@@ -96,6 +96,29 @@
       sync();  // initial render
     });
 
+    // Custom title validation for journal-form (replaces browser tooltip).
+    (function () {
+      var form = document.getElementById('journal-form');
+      if (!form) return;
+      var titleInput = form.querySelector('input[name="title"]');
+      var titleError = document.getElementById('title-error');
+      if (!titleInput || !titleError) return;
+      form.addEventListener('submit', function (e) {
+        if (!titleInput.value.trim()) {
+          e.preventDefault();
+          titleInput.classList.add('input-invalid');
+          titleError.hidden = false;
+          titleInput.focus();
+        }
+      });
+      titleInput.addEventListener('input', function () {
+        if (titleInput.value.trim()) {
+          titleInput.classList.remove('input-invalid');
+          titleError.hidden = true;
+        }
+      });
+    }());
+
     // Global dark confirm modal — available as window.confirmModal(msg, label).
     // Any button with data-confirm="message" is auto-wired: clicking it shows
     // the modal and only submits its form if the user confirms.

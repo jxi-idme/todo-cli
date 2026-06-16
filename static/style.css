@@ -153,6 +153,9 @@ select:focus {
   border-color: var(--accent);
 }
 
+input.input-invalid { border-color: var(--danger); }
+.field-error { font-size: 0.8rem; color: var(--danger); margin-top: 0.25rem; display: block; }
+
 .custom-n {
   width: 90px;
 }
