@@ -270,9 +270,12 @@ def journal_entry(date):
     return _render_entry(data, date)
 
 
-def _parse_entry_form(form, data):
-    """Build {section_id: [tags]} and {section_id: value} from the form, and
-    register any 'permanent' new tags. Only active sections are read here."""
+def _collect_entry_fields(form, data):
+    """Build {section_id: [tags]} and {section_id: value} from the form.
+
+    As a side effect, registers any new 'permanent' tags on their section in
+    the data store (mirroring how _tags_with_new works for tasks). Only active
+    sections are read here."""
     tags, numbers = {}, {}
     for s in journal.active_sections(data):
         sid = s["id"]
@@ -297,13 +300,19 @@ def journal_save():
     date = (request.form.get("date") or "").strip()
     title = request.form.get("title", "")
     body = request.form.get("body", "")
+    if not journal._valid_date(date):
+        flash("Could not save entry: please pick a valid date.")
+        return redirect(url_for("journal_today"))
+    if not title.strip():
+        flash("Could not save entry: a title is required.")
+        return redirect(url_for("journal_entry", date=date))
     data = journal.load(journal_file())
     # Preserve any data on archived sections (not shown on the form).
     existing = journal.get_entry_by_date(data, date)
     base_tags = dict(existing["tags"]) if existing else {}
     base_numbers = dict(existing["numbers"]) if existing else {}
     try:
-        parsed_tags, parsed_numbers = _parse_entry_form(request.form, data)
+        parsed_tags, parsed_numbers = _collect_entry_fields(request.form, data)
         for s in journal.active_sections(data):
             sid = s["id"]
             if s["type"] == "tag":

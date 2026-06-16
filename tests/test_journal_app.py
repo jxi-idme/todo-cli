@@ -102,3 +102,57 @@ def test_edit_existing_date_prefills(client):
     assert resp.status_code == 200
     assert b"Past" in resp.data
     assert b"Update entry" in resp.data
+
+
+def test_save_preserves_archived_section_data(client):
+    """Editing an entry must not drop data for a section archived after the
+    entry was written (the archived-section merge)."""
+    sid = _first_tag_section_id()
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", f"tag:{sid}": "maya"})
+    data = journal.load(_journal_path())
+    journal.archive_section(data, sid)
+    journal.save(_journal_path(), data)
+    # Re-save the same date WITHOUT the archived section's fields.
+    client.post("/journal/save", data={"date": "2026-06-15", "title": "t2", "body": "more"})
+    data = journal.load(_journal_path())
+    e = journal.get_entry_by_date(data, "2026-06-15")
+    assert e["tags"].get(sid) == ["maya"]   # archived data preserved
+    assert e["title"] == "t2"
+
+
+def test_save_unchecking_tag_clears_it(client):
+    sid = _first_tag_section_id()
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", f"tag:{sid}": "maya"})
+    client.post("/journal/save", data={"date": "2026-06-15", "title": "t", "body": ""})
+    data = journal.load(_journal_path())
+    e = journal.get_entry_by_date(data, "2026-06-15")
+    assert sid not in e["tags"]
+
+
+def test_save_numeric_zero_round_trips(client):
+    data = journal.load(_journal_path())
+    s = journal.add_section(data, "sleep", "numeric", "#6fa8dc", unit="hrs")
+    journal.save(_journal_path(), data)
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", f"num:{s['id']}": "0"})
+    data = journal.load(_journal_path())
+    e = journal.get_entry_by_date(data, "2026-06-15")
+    assert e["numbers"][s["id"]] == 0.0
+
+
+def test_save_bad_number_aborts_entirely(client):
+    """A bad numeric value aborts the whole save: no entry AND the permanent
+    new tag in another section is not persisted (all-or-nothing)."""
+    data = journal.load(_journal_path())
+    num = journal.add_section(data, "sleep", "numeric", "#6fa8dc", unit="hrs")
+    journal.save(_journal_path(), data)
+    tag_sid = _first_tag_section_id()
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "",
+        f"newtag-name:{tag_sid}": "cousin lee", f"newtag-kind:{tag_sid}": "permanent",
+        f"num:{num['id']}": "abc"})
+    data = journal.load(_journal_path())
+    assert journal.get_entry_by_date(data, "2026-06-15") is None
+    assert "cousin lee" not in journal.section_by_id(data, tag_sid)["tags"]

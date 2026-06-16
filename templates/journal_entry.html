@@ -30,7 +30,7 @@
       <div class="sections">
         {% for s in tag_sections %}
           {% set fg = text_color_for(s.color) %}
-          {% set selected = (entry.tags[s.id] if entry and entry.tags.get(s.id) else []) %}
+          {% set selected = entry.tags[s.id] if entry and entry.tags.get(s.id) is not none else [] %}
           <div class="section" style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
             <h3>{{ s.name }}</h3>
             <div class="chips">
