@@ -189,6 +189,10 @@
           .then(function (ok) { if (ok && form) form.submit(); });
       });
     }());
+
+    // Keep the server alive while this tab is open. When the tab closes,
+    // pings stop and the server auto-quits after ~30 s (AUTO_QUIT mode).
+    setInterval(function () { fetch('/heartbeat', { method: 'GET' }); }, 10000);
   </script>
   {% block scripts %}{% endblock %}
 </body>

@@ -551,3 +551,8 @@ def test_post_tags_invalid_color_flashes(client):
     )
     assert resp.status_code == 200
     assert b"Could not update tag color" in resp.data
+
+
+def test_heartbeat_returns_204(client):
+    resp = client.get("/heartbeat")
+    assert resp.status_code == 204

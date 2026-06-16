@@ -6,6 +6,9 @@ Post/Redirect/Get pattern so a browser refresh never re-submits a form.
 """
 
 import os
+import signal
+import threading
+import time
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
@@ -44,6 +47,30 @@ def journal_file():
 # Local single-user dev app: pick up template edits without restarting the
 # server (Flask otherwise caches compiled templates when not run with --debug).
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+# Auto-quit watchdog: when AUTO_QUIT=1, the server exits ~30 s after the last
+# browser tab is closed. The browser pings /heartbeat every 10 s; if the server
+# goes 30 s without a ping it sends itself SIGTERM and exits cleanly.
+_last_ping: float = 0.0
+_heartbeat_armed = False  # becomes True after the first ping is received
+
+
+def _heartbeat():
+    global _last_ping, _heartbeat_armed
+    _last_ping = time.monotonic()
+    _heartbeat_armed = True
+
+
+def _watchdog():
+    while True:
+        time.sleep(5)
+        if _heartbeat_armed and time.monotonic() - _last_ping > 30:
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
+
+
+if os.environ.get("AUTO_QUIT") == "1":
+    threading.Thread(target=_watchdog, daemon=True).start()
 
 
 def _recurrence_from_form(form):
@@ -103,6 +130,13 @@ app.jinja_env.globals["is_registered_tag"] = journal.is_registered_tag
 def inject_section_context():
     endpoint = request.endpoint or ""
     return {"in_journal": endpoint.startswith("journal")}
+
+
+@app.route("/heartbeat")
+def heartbeat():
+    """Keeps the auto-quit watchdog alive while a browser tab has the app open."""
+    _heartbeat()
+    return "", 204
 
 
 @app.route("/")
