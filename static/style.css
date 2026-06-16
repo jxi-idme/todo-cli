@@ -477,10 +477,16 @@ h2 {
 
 .section .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .section .chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
   border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.6rem;
   font-size: 0.82rem; cursor: pointer; user-select: none;
 }
-.section .chip input { margin-right: 0.25rem; }
+/* The check circle sits on top of the (often tinted) chip, so give it a dark
+   outer ring for separation; flex on the chip keeps it centered with the text. */
+.section .chip input[type="checkbox"] {
+  margin: 0;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
+}
 .section .chip:has(input:checked) {
   background: color-mix(in srgb, var(--tag-bg) 22%, transparent);
   border-color: var(--tag-bg);
