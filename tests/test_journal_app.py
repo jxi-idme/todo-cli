@@ -190,3 +190,26 @@ def test_move_entry_route_rejects_invalid_date(client):
     assert resp.status_code == 302
     # the entry stays put on its original day
     assert journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-15") is not None
+
+
+# --------------------------------------------------------------------------- #
+# Task 9: Search route and delete route
+# --------------------------------------------------------------------------- #
+
+def test_search_lists_all_entries_newest_first(client):
+    client.post("/journal/save", data={"date": "2026-06-10", "title": "Older", "body": ""})
+    client.post("/journal/save", data={"date": "2026-06-14", "title": "Newer", "body": ""})
+    resp = client.get("/journal/search")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert body.index("Newer") < body.index("Older")
+    assert b"journal-search.js" in resp.data        # live filtering wired
+    assert b"entries-data" in resp.data             # entries embedded as JSON
+
+
+def test_delete_entry_removes_it(client):
+    client.post("/journal/save", data={"date": "2026-06-10", "title": "Bye", "body": ""})
+    eid = journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-10")["id"]
+    resp = client.post(f"/journal/entry/{eid}/delete")
+    assert resp.status_code == 302
+    assert journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-10") is None

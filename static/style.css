@@ -519,6 +519,229 @@ h2 {
 .delete-section { margin-top: 0.6rem; }
 .hint { color: var(--muted); font-size: 0.8rem; }
 
+/* ===================== journal search page ===================== */
+
+/* Search panel: card that holds the controls */
+.search-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  margin: 1.2rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+/* Top row of controls: text input + tag dropdown */
+.search-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.search-controls #q {
+  flex: 1 1 220px;
+  min-width: 140px;
+}
+
+/* ---- Tag dropdown ---- */
+.tag-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.tag-dropdown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.tag-dropdown-btn:hover,
+.tag-dropdown-btn:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.tag-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 0.75rem;
+  min-width: 200px;
+  max-width: 340px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.tag-dropdown-group-label {
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.5rem 0 0.3rem;
+}
+
+.tag-dropdown-group-label:first-child {
+  margin-top: 0;
+}
+
+.tag-dropdown-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.tag-dropdown-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Chips inside the dropdown get the same two-tone circle as the entry form */
+.tag-dropdown-panel .chip.tag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tag-dropdown-panel .chip.tag-toggle input[type="checkbox"] {
+  margin: 0;
+  border-color: #2a2e37;
+  background-color: #cdd2da;
+}
+
+.tag-dropdown-panel .chip.tag-toggle input[type="checkbox"]:checked {
+  background-color: #3fae5a;
+}
+
+.tag-dropdown-panel .chip.tag-toggle:has(input:checked) {
+  background: color-mix(in srgb, var(--tag-bg) 22%, transparent);
+  border-color: var(--tag-bg);
+}
+
+/* ---- Numeric range filters ---- */
+.num-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.2rem;
+}
+
+.num-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 180px;
+  flex: 1 1 180px;
+}
+
+.num-filter-disabled {
+  opacity: 0.5;
+}
+
+.num-filter-label {
+  font-size: 0.8rem;
+  color: var(--accent);
+  letter-spacing: 0.3px;
+}
+
+/* Dual-range slider: two overlapping range inputs */
+.dual-range {
+  position: relative;
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.dual-range input[type="range"] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  height: 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The first (min) slider sits on top; pointer-events let both be draggable */
+.dual-range input[type="range"]:first-child { z-index: 2; }
+.dual-range input[type="range"]:last-child  { z-index: 1; }
+
+.range-readout {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* ---- Result count ---- */
+.result-count {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0 0 0.6rem;
+}
+
+/* ---- Entry rows (reuse .entry-list/.entry-row/.entry-link from below) ---- */
+
+/* Small tag chips in the search results */
+.entry-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.entry-tag-chip {
+  font-size: 0.72rem;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+
+.entry-nums {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.entry-num {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.entry-delete-form {
+  margin: 0;
+  flex-shrink: 0;
+}
+
 /* ===================== custom dark calendar widget ===================== */
 
 /* The wrapper that holds the trigger button + popover. Positioned so the

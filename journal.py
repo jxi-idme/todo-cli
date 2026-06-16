@@ -364,6 +364,49 @@ def entry_dates(data):
     return sorted(e["date"] for e in data.get("entries", []) if e.get("date"))
 
 
+# --------------------------------------------------------------------------- #
+# Task 9: Search index helpers
+# --------------------------------------------------------------------------- #
+
+def search_index(data):
+    """Per-entry payload for the client-side search tab (newest date first).
+
+    Each item: id, date, title, body, `tags` (flat sorted unique list of every
+    tag string on the entry, across all sections), and `numbers`
+    ({section_id: value}). Designed to be JSON-serialized into the page.
+    """
+    out = []
+    for e in entries_sorted(data):
+        tags = set()
+        for names in (e.get("tags") or {}).values():
+            for n in names or []:
+                tags.add(n)
+        out.append({
+            "id": e["id"],
+            "date": e["date"],
+            "title": e.get("title", ""),
+            "body": e.get("body", ""),
+            "tags": sorted(tags),
+            "numbers": dict(e.get("numbers") or {}),
+        })
+    return out
+
+
+def numeric_bounds(data):
+    """{section_id: [min, max]} over recorded values, for every numeric section
+    that has at least one value among entries. Used to size the range sliders;
+    sections with no recorded values are omitted."""
+    bounds = {}
+    for s in data.get("sections", []):
+        if s.get("type") != "numeric":
+            continue
+        vals = [e["numbers"][s["id"]] for e in data.get("entries", [])
+                if isinstance(e.get("numbers"), dict) and s["id"] in e["numbers"]]
+        if vals:
+            bounds[s["id"]] = [min(vals), max(vals)]
+    return bounds
+
+
 def move_entry(data, entry_id, new_date):
     """Move an entry to `new_date`.
 

@@ -351,11 +351,25 @@ def journal_entry_move(entry_id):
         return redirect(url_for("journal_entry", date=fallback))
 
 
-@app.route("/journal/entries")
-def journal_list():
+@app.route("/journal/search")
+def journal_search():
     data = journal.load(journal_file())
-    return render_template("journal_list.html", data=data,
-                           entries=journal.entries_sorted(data))
+    return render_template(
+        "journal_search.html", data=data,
+        entries=journal.search_index(data),
+        tag_sections=[s for s in journal.active_sections(data) if s["type"] == "tag"],
+        num_sections=[s for s in journal.active_sections(data) if s["type"] == "numeric"],
+        bounds=journal.numeric_bounds(data),
+    )
+
+
+@app.route("/journal/entry/<entry_id>/delete", methods=["POST"])
+def journal_entry_delete(entry_id):
+    data = journal.load(journal_file())
+    journal.delete_entry(data, entry_id)
+    journal.save(journal_file(), data)
+    flash("Entry deleted.")
+    return redirect(url_for("journal_search"))
 
 
 @app.route("/journal/sections")

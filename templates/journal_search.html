@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block brand_mascot %}
+  <img class="mascot" src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+       width="56" height="56" alt="pompompurin">
+{% endblock %}
+{% block brand_title %}
+  <span class="site-title">journal</span>
+{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('journal_today') }}">New entry</a>
+  <a href="{{ url_for('journal_search') }}">Search</a>
+  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+{% endblock %}
+{% block content %}
+  <div class="search-panel">
+    <div class="search-controls">
+      <input type="text" id="q" placeholder="search words in entries…" autocomplete="off">
+
+      {% if tag_sections %}
+        <div class="tag-dropdown">
+          <button type="button" class="tag-dropdown-btn" aria-expanded="false" aria-haspopup="true">
+            Tags <span class="cal-caret">▾</span>
+          </button>
+          <div class="tag-dropdown-panel" hidden>
+            {% for s in tag_sections %}
+              {% if s.tags %}
+                <p class="tag-dropdown-group-label">{{ s.name }}</p>
+                <div class="tag-dropdown-chips">
+                  {% set fg = text_color_for(s.color) %}
+                  {% for tag in s.tags %}
+                    <label class="chip tag-toggle" style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
+                      <input type="checkbox" data-tag="{{ tag }}"> {{ tag }}
+                    </label>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
+            {% if not tag_sections or tag_sections | selectattr('tags') | list | length == 0 %}
+              <p class="tag-dropdown-empty">No permanent tags yet.</p>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if num_sections %}
+      <div class="num-filters">
+        {% for s in num_sections %}
+          {% if s.id in bounds %}
+            {% set lo = bounds[s.id][0] %}
+            {% set hi = bounds[s.id][1] %}
+            <div class="num-filter">
+              <span class="num-filter-label">{{ s.name }}{% if s.unit %} <span class="unit">({{ s.unit }})</span>{% endif %}</span>
+              <div class="dual-range">
+                <input type="range" data-section="{{ s.id }}" data-role="min"
+                       min="{{ lo }}" max="{{ hi }}" value="{{ lo }}" step="any">
+                <input type="range" data-section="{{ s.id }}" data-role="max"
+                       min="{{ lo }}" max="{{ hi }}" value="{{ hi }}" step="any">
+              </div>
+              <span class="range-readout" data-section="{{ s.id }}">{{ lo }}–{{ hi }}{% if s.unit %} {{ s.unit }}{% endif %}</span>
+            </div>
+          {% else %}
+            <div class="num-filter num-filter-disabled">
+              <span class="num-filter-label">{{ s.name }}{% if s.unit %} <span class="unit">({{ s.unit }})</span>{% endif %}</span>
+              <span class="muted">no data yet</span>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <p class="result-count"></p>
+
+  {% if entries %}
+    <ul class="entry-list" id="entry-list">
+      {% for e in entries %}
+        <li class="entry-row" data-id="{{ e.id }}">
+          <a class="entry-link" href="{{ url_for('journal_entry', date=e.date) }}">
+            <span class="entry-date">{{ e.date }}</span>
+            <span class="entry-title">{{ e.title }}</span>
+          </a>
+          {% if e.tags %}
+            <span class="entry-tags">
+              {% for tag in e.tags %}
+                <span class="entry-tag-chip">{{ tag }}</span>
+              {% endfor %}
+            </span>
+          {% endif %}
+          {% if e.numbers %}
+            <span class="entry-nums">
+              {% for sid, val in e.numbers.items() %}
+                <span class="entry-num">{{ val }}</span>
+              {% endfor %}
+            </span>
+          {% endif %}
+          <form method="post" action="{{ url_for('journal_entry_delete', entry_id=e.id) }}"
+                class="entry-delete-form">
+            <button type="submit" class="delete" title="Delete entry">×</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">No journal entries yet.</p>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script type="application/json" id="entries-data">{{ entries | tojson }}</script>
+  <script type="application/json" id="bounds-data">{{ bounds | tojson }}</script>
+  <script src="{{ url_for('static', filename='journal-search.js') }}" defer></script>
+{% endblock %}

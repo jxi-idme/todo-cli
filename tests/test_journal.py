@@ -365,3 +365,30 @@ def test_move_entry_same_date_is_noop():
     e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
     journal.move_entry(data, e["id"], "2026-06-15")
     assert journal.get_entry_by_date(data, "2026-06-15")["id"] == e["id"]
+
+
+# --------------------------------------------------------------------------- #
+# Task 9: Search index helpers
+# --------------------------------------------------------------------------- #
+
+def test_search_index_shape_and_order():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-13", "old", "ran in the park",
+                         tags={s["id"]: ["maya"]}, now=NOW)
+    journal.upsert_entry(data, "2026-06-15", "new", "quiet day", now=NOW)
+    idx = journal.search_index(data)
+    assert [i["date"] for i in idx] == ["2026-06-15", "2026-06-13"]   # newest first
+    older = idx[1]
+    assert older["title"] == "old" and older["body"] == "ran in the park"
+    assert older["tags"] == ["maya"]
+
+
+def test_numeric_bounds():
+    data = journal._empty()
+    s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    journal.upsert_entry(data, "2026-06-13", "a", "", numbers={s["id"]: "6"}, now=NOW)
+    journal.upsert_entry(data, "2026-06-15", "b", "", numbers={s["id"]: "9"}, now=NOW)
+    assert journal.numeric_bounds(data)[s["id"]] == [6.0, 9.0]
+    s2 = journal.add_section(data, "weight", "numeric", "#fff", unit="lbs")
+    assert s2["id"] not in journal.numeric_bounds(data)   # no values -> omitted
