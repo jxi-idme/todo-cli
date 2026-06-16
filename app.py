@@ -379,5 +379,65 @@ def journal_sections():
                            sections=journal.active_sections(data))
 
 
+@app.route("/journal/sections/add", methods=["POST"])
+def journal_sections_add():
+    data = journal.load(journal_file())
+    try:
+        journal.add_section(
+            data,
+            request.form.get("name", ""),
+            request.form.get("type", "tag"),
+            (request.form.get("color") or "").strip(),
+            unit=request.form.get("unit", ""),
+        )
+        journal.save(journal_file(), data)
+    except ValueError:
+        flash("Could not add section: check the name, type, and color.")
+    return redirect(url_for("journal_sections"))
+
+
+@app.route("/journal/sections/<section_id>/edit", methods=["POST"])
+def journal_section_edit(section_id):
+    data = journal.load(journal_file())
+    try:
+        journal.rename_section(data, section_id, request.form.get("name", ""))
+        journal.set_section_color(data, section_id, (request.form.get("color") or "").strip())
+        if journal.section_by_id(data, section_id) and \
+                journal.section_by_id(data, section_id).get("type") == "numeric":
+            journal.set_section_unit(data, section_id, request.form.get("unit", ""))
+        journal.save(journal_file(), data)
+    except ValueError:
+        flash("Could not update section: check the name and color.")
+    return redirect(url_for("journal_sections"))
+
+
+@app.route("/journal/sections/<section_id>/delete", methods=["POST"])
+def journal_section_delete(section_id):
+    data = journal.load(journal_file())
+    journal.archive_section(data, section_id)
+    journal.save(journal_file(), data)
+    flash("Section archived.")
+    return redirect(url_for("journal_sections"))
+
+
+@app.route("/journal/sections/<section_id>/tags", methods=["POST"])
+def journal_section_tag_add(section_id):
+    data = journal.load(journal_file())
+    try:
+        journal.add_section_tag(data, section_id, request.form.get("tag", ""))
+        journal.save(journal_file(), data)
+    except ValueError:
+        flash("Could not add tag: check the name.")
+    return redirect(url_for("journal_sections"))
+
+
+@app.route("/journal/sections/<section_id>/tags/<tag>/delete", methods=["POST"])
+def journal_section_tag_remove(section_id, tag):
+    data = journal.load(journal_file())
+    journal.remove_section_tag(data, section_id, tag)
+    journal.save(journal_file(), data)
+    return redirect(url_for("journal_sections"))
+
+
 if __name__ == "__main__":
     app.run(debug=True)

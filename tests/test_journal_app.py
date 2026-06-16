@@ -213,3 +213,92 @@ def test_delete_entry_removes_it(client):
     resp = client.post(f"/journal/entry/{eid}/delete")
     assert resp.status_code == 302
     assert journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-10") is None
+
+
+# --------------------------------------------------------------------------- #
+# Task 10: Sections management page
+# --------------------------------------------------------------------------- #
+
+def test_sections_page_lists_sections(client):
+    resp = client.get("/journal/sections")
+    assert resp.status_code == 200
+    assert b"people" in resp.data
+    assert b"work" in resp.data
+
+
+def test_add_tag_section(client):
+    resp = client.post("/journal/sections/add", data={
+        "name": "mood", "type": "tag", "color": "#abcdef"})
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert any(s["name"] == "mood" and s["type"] == "tag" for s in data["sections"])
+
+
+def test_add_numeric_section_with_unit(client):
+    resp = client.post("/journal/sections/add", data={
+        "name": "sleep", "type": "numeric", "color": "#6fa8dc", "unit": "hrs"})
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    s = next(s for s in data["sections"] if s["name"] == "sleep")
+    assert s["type"] == "numeric" and s["unit"] == "hrs"
+
+
+def test_add_section_bad_color_flashes_and_saves_nothing(client):
+    resp = client.post("/journal/sections/add", data={
+        "name": "mood", "type": "numeric", "color": "purple"})
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert not any(s["name"] == "mood" for s in data["sections"])
+
+
+def test_edit_section_rename_and_color(client):
+    sid = journal.active_sections(journal.load(_journal_path()))[0]["id"]
+    resp = client.post(f"/journal/sections/{sid}/edit", data={
+        "name": "friends", "color": "#111111"})
+    assert resp.status_code == 302
+    s = journal.section_by_id(journal.load(_journal_path()), sid)
+    assert s["name"] == "friends" and s["color"] == "#111111"
+
+
+def test_edit_section_bad_name_flashes(client):
+    sid = journal.active_sections(journal.load(_journal_path()))[0]["id"]
+    original = journal.section_by_id(journal.load(_journal_path()), sid)["name"]
+    client.post(f"/journal/sections/{sid}/edit", data={
+        "name": "bad;name!", "color": "#abcdef"})
+    assert journal.section_by_id(journal.load(_journal_path()), sid)["name"] == original
+
+
+def test_archive_section_soft_deletes(client):
+    sid = journal.active_sections(journal.load(_journal_path()))[0]["id"]
+    resp = client.post(f"/journal/sections/{sid}/delete")
+    assert resp.status_code == 302
+    s = journal.section_by_id(journal.load(_journal_path()), sid)
+    assert s["archived"] is True
+
+
+def test_add_permanent_tag_to_section(client):
+    sid = journal.active_sections(journal.load(_journal_path()))[0]["id"]
+    resp = client.post(f"/journal/sections/{sid}/tags", data={"tag": "maya"})
+    assert resp.status_code == 302
+    assert "maya" in journal.section_by_id(journal.load(_journal_path()), sid)["tags"]
+
+
+def test_remove_permanent_tag_does_not_affect_entries(client):
+    """Removing a tag from the master list must NOT remove it from existing entries."""
+    sid = _first_tag_section_id()
+    # Add the tag to the master list.
+    client.post(f"/journal/sections/{sid}/tags", data={"tag": "maya"})
+    # Save an entry that uses that tag.
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "Day one", "body": "",
+        f"tag:{sid}": "maya",
+    })
+    # Remove the tag from the master list.
+    resp = client.post(f"/journal/sections/{sid}/tags/maya/delete")
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    # Not in the master list anymore.
+    assert "maya" not in journal.section_by_id(data, sid)["tags"]
+    # Still on the entry.
+    entry = journal.get_entry_by_date(data, "2026-06-15")
+    assert "maya" in entry["tags"][sid]

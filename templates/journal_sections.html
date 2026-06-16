@@ -12,5 +12,73 @@
   <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
 {% endblock %}
 {% block content %}
-  <p>manage sections</p>
+  <h2>Manage sections &amp; tags</h2>
+  <p class="hint">Removing a permanent tag only hides it from the entry form — existing entries keep their data.</p>
+
+  {% for s in sections %}
+    {% set fg = text_color_for(s.color) %}
+    <section class="manage-section" style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
+
+      <form class="manage-head tag-preview-group" method="post"
+            action="{{ url_for('journal_section_edit', section_id=s.id) }}">
+        <input class="tag-name-input" type="text" name="name" value="{{ s.name }}" required>
+        <input class="tag-color-input" type="color" name="color" value="{{ s.color }}">
+        <span class="tag-preview title-highlight" style="--tag-bg: {{ s.color }};">{{ s.name }}</span>
+        <span class="pill">{{ s.type }}</span>
+        {% if s.type == "numeric" %}
+          <input class="unit-input" type="text" name="unit"
+                 value="{{ s.unit or '' }}" placeholder="unit label">
+        {% endif %}
+        <button type="submit">save</button>
+      </form>
+
+      {% if s.type == "tag" %}
+        <div class="perm-tags">
+          {% for tag in s.tags %}
+            <span class="perm-chip">{{ tag }}
+              <button form="rm-{{ s.id }}-{{ loop.index }}" type="submit"
+                      class="x" title="Remove from future entries (existing entries unaffected)">×</button>
+            </span>
+            <form id="rm-{{ s.id }}-{{ loop.index }}" method="post"
+                  action="{{ url_for('journal_section_tag_remove', section_id=s.id, tag=tag) }}"></form>
+          {% endfor %}
+          {% if not s.tags %}
+            <span class="muted-note">No permanent tags yet.</span>
+          {% endif %}
+        </div>
+        <form class="addrow" method="post"
+              action="{{ url_for('journal_section_tag_add', section_id=s.id) }}">
+          <input type="text" name="tag" placeholder="add permanent tag…" required>
+          <button type="submit">add</button>
+        </form>
+      {% endif %}
+
+      <form class="delete-section" method="post"
+            action="{{ url_for('journal_section_delete', section_id=s.id) }}">
+        <button type="submit" class="delete"
+                onclick="return confirm('Archive this section? Existing entries keep their data.')">
+          archive section
+        </button>
+      </form>
+
+    </section>
+  {% endfor %}
+
+  {% if not sections %}
+    <p class="empty">No sections yet.</p>
+  {% endif %}
+
+  <h3>Add a section</h3>
+  <form class="addrow tag-preview-group" method="post"
+        action="{{ url_for('journal_sections_add') }}">
+    <input class="tag-name-input" type="text" name="name" placeholder="section name" required>
+    <select name="type">
+      <option value="tag">tag</option>
+      <option value="numeric">numeric</option>
+    </select>
+    <input class="tag-color-input" type="color" name="color" value="#e0a955">
+    <span class="tag-preview title-highlight" style="--tag-bg: #e0a955;">preview</span>
+    <input class="unit-input" type="text" name="unit" placeholder="unit (numeric only)">
+    <button type="submit">+ add section</button>
+  </form>
 {% endblock %}
