@@ -28,12 +28,9 @@ if [ -n "$EXISTING" ]; then
   [ -n "$STILL" ] && kill -9 $STILL 2>/dev/null
 fi
 
-# Start Flask detached from this shell so macOS Shortcuts doesn't wait for it.
-# nohup: ignore SIGHUP when this shell exits.
-# disown: remove from job table so the shell doesn't track it as a child.
-nohup env AUTO_QUIT=1 .venv/bin/python -m flask --app app run --port "$PORT" \
-  >> data/server.log 2>&1 &
-disown $!
+# start_server.py uses a double-fork so it returns immediately to this script,
+# with Flask running as a completely detached daemon process.
+.venv/bin/python start_server.py
 
 # Poll until the server is ready, then open the browser.
 # --max-time 1 prevents curl from hanging if Flask didn't start.
@@ -44,5 +41,3 @@ done
 open "$URL"
 
 # Script exits here — the dock icon clears immediately.
-# The detached server runs in the background and self-terminates
-# ~30 s after the last browser tab is closed.
