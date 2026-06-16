@@ -379,6 +379,40 @@ def journal_sections():
                            sections=journal.active_sections(data))
 
 
+@app.route("/journal/sections/archive")
+def journal_sections_archive():
+    data = journal.load(journal_file())
+    archived = journal.archived_sections(data)
+    sections_with_archived_tags = [
+        s for s in journal.active_sections(data)
+        if s.get("archived_tags")
+    ]
+    return render_template(
+        "journal_sections_archive.html",
+        archived_sections=archived,
+        sections_with_archived_tags=sections_with_archived_tags,
+    )
+
+
+@app.route("/journal/sections/<section_id>/restore", methods=["POST"])
+def journal_section_restore(section_id):
+    data = journal.load(journal_file())
+    try:
+        journal.restore_section(data, section_id)
+        journal.save(journal_file(), data)
+    except ValueError:
+        flash("Could not restore section: an active section with that name already exists.")
+    return redirect(url_for("journal_sections_archive"))
+
+
+@app.route("/journal/sections/<section_id>/tags/<tag>/restore", methods=["POST"])
+def journal_section_tag_restore(section_id, tag):
+    data = journal.load(journal_file())
+    journal.restore_section_tag(data, section_id, tag)
+    journal.save(journal_file(), data)
+    return redirect(url_for("journal_sections_archive"))
+
+
 @app.route("/journal/sections/add", methods=["POST"])
 def journal_sections_add():
     data = journal.load(journal_file())

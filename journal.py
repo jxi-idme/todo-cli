@@ -72,6 +72,7 @@ def load(path):
     ):
         for s in parsed["sections"]:
             s.setdefault("tags", [])
+            s.setdefault("archived_tags", [])
             s.setdefault("unit", None)
             s.setdefault("archived", False)
         for e in parsed["entries"]:
@@ -167,6 +168,7 @@ def add_section(data, name, type_, color, unit=None):
         "type": type_,
         "color": color,
         "tags": [],
+        "archived_tags": [],
         "unit": ((unit or "").strip()[:_MAX_UNIT_LEN] or None) if type_ == "numeric" else None,
         "archived": False,
     }
@@ -221,6 +223,7 @@ def archive_section(data, section_id):
 
 def add_section_tag(data, section_id, tag):
     """Add a permanent tag to a tag-section (normalized, validated, unique).
+    If the tag was previously archived, it is unarchived instead of duplicated.
     Raises on a bad name or a numeric section. Unknown id = no-op."""
     tag = _normalize_name(tag)
     if not _valid_name(tag):
@@ -230,18 +233,57 @@ def add_section_tag(data, section_id, tag):
         return data
     if s.get("type") != "tag":
         raise ValueError("Cannot add tags to a numeric section")
+    archived = s.setdefault("archived_tags", [])
+    if tag in archived:
+        archived.remove(tag)
     if tag not in s.setdefault("tags", []):
         s["tags"].append(tag)
     return data
 
 
 def remove_section_tag(data, section_id, tag):
-    """Remove a permanent tag from a section's master list (entries keep it).
+    """Move a permanent tag to the archived list (entries keep it).
     Unknown id/tag = safe no-op."""
     tag = _normalize_name(tag)
     s = section_by_id(data, section_id)
     if s is not None and isinstance(s.get("tags"), list):
-        s["tags"] = [t for t in s["tags"] if t != tag]
+        if tag in s["tags"]:
+            s["tags"].remove(tag)
+            archived = s.setdefault("archived_tags", [])
+            if tag not in archived:
+                archived.append(tag)
+    return data
+
+
+def archived_sections(data):
+    """Sections that have been archived (soft-deleted), in stored order."""
+    return [s for s in data.get("sections", []) if s.get("archived")]
+
+
+def restore_section(data, section_id):
+    """Un-archive a section. Raises ValueError if an active section already
+    has the same name. Unknown id = no-op."""
+    s = section_by_id(data, section_id)
+    if s is None:
+        return data
+    for active in active_sections(data):
+        if active["name"] == s["name"] and active["id"] != section_id:
+            raise ValueError(f"An active section named {s['name']!r} already exists")
+    s["archived"] = False
+    return data
+
+
+def restore_section_tag(data, section_id, tag):
+    """Move a tag from archived_tags back to tags. Unknown id/tag = no-op."""
+    tag = _normalize_name(tag)
+    s = section_by_id(data, section_id)
+    if s is None:
+        return data
+    archived = s.setdefault("archived_tags", [])
+    if tag in archived:
+        archived.remove(tag)
+        if tag not in s.setdefault("tags", []):
+            s["tags"].append(tag)
     return data
 
 

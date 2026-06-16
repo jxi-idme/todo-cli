@@ -392,3 +392,87 @@ def test_numeric_bounds():
     assert journal.numeric_bounds(data)[s["id"]] == [6.0, 9.0]
     s2 = journal.add_section(data, "weight", "numeric", "#fff", unit="lbs")
     assert s2["id"] not in journal.numeric_bounds(data)   # no values -> omitted
+
+
+# --------------------------------------------------------------------------- #
+# Archived tags & sections
+# --------------------------------------------------------------------------- #
+
+def test_remove_section_tag_archives_not_deletes():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "maya")
+    journal.remove_section_tag(data, s["id"], "maya")
+    assert "maya" not in journal.section_by_id(data, s["id"])["tags"]
+    assert "maya" in journal.section_by_id(data, s["id"])["archived_tags"]
+
+
+def test_readd_archived_tag_moves_it_back():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "maya")
+    journal.remove_section_tag(data, s["id"], "maya")
+    # Re-add the same tag.
+    journal.add_section_tag(data, s["id"], "maya")
+    s2 = journal.section_by_id(data, s["id"])
+    assert "maya" in s2["tags"]
+    assert "maya" not in s2["archived_tags"]
+
+
+def test_readd_archived_tag_case_insensitive():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "Maya")   # stored as "maya"
+    journal.remove_section_tag(data, s["id"], "MAYA")  # archived as "maya"
+    journal.add_section_tag(data, s["id"], "maya")    # re-add unarchives
+    s2 = journal.section_by_id(data, s["id"])
+    assert "maya" in s2["tags"]
+    assert "maya" not in s2["archived_tags"]
+
+
+def test_archived_sections_helper():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    assert journal.archived_sections(data) == []
+    journal.archive_section(data, s["id"])
+    assert journal.archived_sections(data) == [s]
+    assert journal.active_sections(data) == []
+
+
+def test_restore_section():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.archive_section(data, s["id"])
+    journal.restore_section(data, s["id"])
+    assert journal.section_by_id(data, s["id"])["archived"] is False
+    assert journal.active_sections(data) == [s]
+
+
+def test_restore_section_name_collision_raises():
+    data = journal._empty()
+    s1 = journal.add_section(data, "people", "tag", "#fff")
+    journal.archive_section(data, s1["id"])
+    journal.add_section(data, "people", "tag", "#000")  # new active section with same name
+    with pytest.raises(ValueError):
+        journal.restore_section(data, s1["id"])
+
+
+def test_restore_section_tag():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "maya")
+    journal.remove_section_tag(data, s["id"], "maya")
+    journal.restore_section_tag(data, s["id"], "maya")
+    s2 = journal.section_by_id(data, s["id"])
+    assert "maya" in s2["tags"]
+    assert "maya" not in s2["archived_tags"]
+
+
+def test_load_migrates_archived_tags_field(tmp_path):
+    path = tmp_path / "journal.json"
+    path.write_text(
+        '{"sections": [{"id": "x", "name": "people", "type": "tag", "color": "#fff", "tags": ["maya"], "unit": null, "archived": false}], "entries": []}',
+        encoding="utf-8",
+    )
+    data = journal.load(str(path))
+    assert data["sections"][0].get("archived_tags") == []

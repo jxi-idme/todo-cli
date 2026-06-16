@@ -302,3 +302,54 @@ def test_remove_permanent_tag_does_not_affect_entries(client):
     # Still on the entry.
     entry = journal.get_entry_by_date(data, "2026-06-15")
     assert "maya" in entry["tags"][sid]
+
+
+# --------------------------------------------------------------------------- #
+# Archive page routes
+# --------------------------------------------------------------------------- #
+
+def test_archive_page_lists_archived_section(client):
+    sid = journal.active_sections(journal.load(_journal_path()))[0]["id"]
+    client.post(f"/journal/sections/{sid}/delete")
+    resp = client.get("/journal/sections/archive")
+    assert resp.status_code == 200
+    assert b"people" in resp.data
+
+
+def test_archive_page_lists_archived_tags(client):
+    sid = _first_tag_section_id()
+    client.post(f"/journal/sections/{sid}/tags", data={"tag": "maya"})
+    client.post(f"/journal/sections/{sid}/tags/maya/delete")
+    resp = client.get("/journal/sections/archive")
+    assert resp.status_code == 200
+    assert b"maya" in resp.data
+
+
+def test_restore_section(client):
+    sid = journal.active_sections(journal.load(_journal_path()))[0]["id"]
+    client.post(f"/journal/sections/{sid}/delete")
+    resp = client.post(f"/journal/sections/{sid}/restore")
+    assert resp.status_code == 302
+    assert journal.section_by_id(journal.load(_journal_path()), sid)["archived"] is False
+
+
+def test_restore_section_tag(client):
+    sid = _first_tag_section_id()
+    client.post(f"/journal/sections/{sid}/tags", data={"tag": "maya"})
+    client.post(f"/journal/sections/{sid}/tags/maya/delete")
+    resp = client.post(f"/journal/sections/{sid}/tags/maya/restore")
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert "maya" in journal.section_by_id(data, sid)["tags"]
+    assert "maya" not in journal.section_by_id(data, sid)["archived_tags"]
+
+
+def test_readd_archived_tag_via_form_unarchives_it(client):
+    sid = _first_tag_section_id()
+    client.post(f"/journal/sections/{sid}/tags", data={"tag": "maya"})
+    client.post(f"/journal/sections/{sid}/tags/maya/delete")
+    # Re-add via the normal add-tag form (not the restore route).
+    client.post(f"/journal/sections/{sid}/tags", data={"tag": "MAYA"})
+    data = journal.load(_journal_path())
+    assert "maya" in journal.section_by_id(data, sid)["tags"]
+    assert "maya" not in journal.section_by_id(data, sid)["archived_tags"]

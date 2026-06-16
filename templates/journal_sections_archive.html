@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block brand_mascot %}
+  <img class="mascot" src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+       width="56" height="56" alt="pompompurin">
+{% endblock %}
+{% block brand_title %}
+  <span class="site-title">journal</span>
+{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('journal_today') }}">New entry</a>
+  <a href="{{ url_for('journal_search') }}">Search</a>
+  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+  <a href="{{ url_for('journal_sections_archive') }}">Archive</a>
+{% endblock %}
+{% block content %}
+  <h2>Archive</h2>
+  <p class="hint">Restore a section or tag to make it active again.</p>
+
+  {% if archived_sections %}
+    <h3>Archived sections</h3>
+    {% for s in archived_sections %}
+      {% set fg = text_color_for(s.color) %}
+      <div class="manage-section" style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
+        <div class="manage-head">
+          <span class="tag-preview title-highlight" style="--tag-bg: {{ s.color }};">{{ s.name }}</span>
+          <span class="pill">{{ s.type }}</span>
+          {% if s.type == "numeric" and s.unit %}
+            <span class="muted-note">{{ s.unit }}</span>
+          {% endif %}
+        </div>
+        <form method="post"
+              action="{{ url_for('journal_section_restore', section_id=s.id) }}"
+              style="margin-top: 0.5rem;">
+          <button type="submit" class="restore-btn">restore section</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="empty">No archived sections.</p>
+  {% endif %}
+
+  {% if sections_with_archived_tags %}
+    <h3>Archived tags</h3>
+    {% for s in sections_with_archived_tags %}
+      {% set fg = text_color_for(s.color) %}
+      <div class="manage-section" style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
+        <div class="manage-head">
+          <span class="tag-preview title-highlight" style="--tag-bg: {{ s.color }};">{{ s.name }}</span>
+        </div>
+        <div class="perm-tags" style="margin-top: 0.5rem;">
+          {% for tag in s.archived_tags %}
+            <span class="perm-chip archived-chip">{{ tag }}
+              <button form="restore-tag-{{ s.id }}-{{ loop.index }}" type="submit"
+                      class="restore-x" title="Restore tag">↩</button>
+            </span>
+            <form id="restore-tag-{{ s.id }}-{{ loop.index }}" method="post"
+                  action="{{ url_for('journal_section_tag_restore', section_id=s.id, tag=tag) }}"></form>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="empty">No archived tags.</p>
+  {% endif %}
+{% endblock %}
