@@ -10,10 +10,12 @@
   <a href="{{ url_for('journal_today') }}">New entry</a>
   <a href="{{ url_for('journal_search') }}">Search</a>
   <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
-  <a href="{{ url_for('journal_sections_archive') }}">Archive</a>
 {% endblock %}
 {% block content %}
-  <h2>Manage sections &amp; tags</h2>
+  <div class="page-title-row">
+    <h2>Manage sections &amp; tags</h2>
+    <a class="archive-link" href="{{ url_for('journal_sections_archive') }}">Archive</a>
+  </div>
   <p class="hint">Removing a permanent tag only hides it from the entry form — existing entries keep their data.</p>
 
   {% for s in sections %}

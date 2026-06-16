@@ -519,6 +519,9 @@ h2 {
 .delete-section { margin-top: 0.6rem; }
 .hint { color: var(--muted); font-size: 0.8rem; }
 .muted-note { color: var(--muted); font-size: 0.8rem; }
+.page-title-row { display: flex; align-items: baseline; justify-content: space-between; }
+.archive-link { color: var(--muted); font-size: 0.8rem; text-decoration: none; }
+.archive-link:hover { color: var(--text); }
 .archived-chip { opacity: 0.65; border-style: dashed; }
 .restore-x { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; line-height: 1; }
 .restore-btn { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: 0.25rem 0.7rem; cursor: pointer; font: inherit; font-size: 0.82rem; }
