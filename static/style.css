@@ -507,3 +507,254 @@ h2 {
 .addrow { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; align-items: center; }
 .delete-section { margin-top: 0.6rem; }
 .hint { color: var(--muted); font-size: 0.8rem; }
+
+/* ===================== custom dark calendar widget ===================== */
+
+/* The wrapper that holds the trigger button + popover. Positioned so the
+   popover can be absolutely placed relative to it. */
+.cal-field {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Trigger button: looks like the other inputs, amber on hover. */
+.cal-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.cal-trigger:hover,
+.cal-trigger:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.cal-caret {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Popover panel: floats below the trigger. */
+.cal-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 0.75rem;
+  min-width: 240px;
+  user-select: none;
+}
+
+/* Header row: prev / month-year / next. */
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.55rem;
+}
+
+.cal-month-title {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+
+.cal-nav {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.cal-nav:hover {
+  color: var(--accent);
+  background: none;
+  border: none;
+}
+
+/* 7-column grid for weekdays + day cells. */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.2rem 0;
+}
+
+/* Each day cell is a small flex column so the dot sits under the number. */
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 3px 2px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text);
+  transition: background 0.1s ease;
+}
+
+.cal-day-blank {
+  cursor: default;
+}
+
+.cal-day:not(.cal-day-blank):not(.is-disabled):hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+/* Today gets an amber border. */
+.cal-day.is-today {
+  border: 1px solid var(--accent);
+}
+
+/* Selected day gets a subtle amber fill. */
+.cal-day.is-selected {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--accent);
+}
+
+.cal-day.is-selected:hover {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Disabled days (occupied, shown in move mode). */
+.cal-day.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Entry dot: small amber circle below the number. */
+.cal-day-num {
+  line-height: 1;
+}
+
+.cal-dot {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* ---- Move-entry row & button ---- */
+.move-row {
+  margin-top: 0.75rem;
+  display: flex;
+}
+
+.move-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.move-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: none;
+}
+
+/* ---- Dark confirm modal ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  max-width: 360px;
+  width: 90%;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+.modal-msg {
+  margin: 0 0 1rem;
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.modal-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.modal-cancel:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: none;
+}
+
+.modal-confirm {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #1a1a1a;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.modal-confirm:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #1a1a1a;
+}

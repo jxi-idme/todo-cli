@@ -252,6 +252,7 @@ def _render_entry(data, date):
         "journal_entry.html", data=data,
         entry=journal.get_entry_by_date(data, date),
         date=date, sections=journal.active_sections(data),
+        entry_dates=journal.entry_dates(data),
     )
 
 
@@ -331,6 +332,23 @@ def journal_save():
         return redirect(url_for("journal_entry", date=date) if journal._valid_date(date)
                         else url_for("journal_today"))
     return redirect(url_for("journal_entry", date=date))
+
+
+@app.route("/journal/entry/<entry_id>/move", methods=["POST"])
+def journal_entry_move(entry_id):
+    new_date = (request.form.get("date") or "").strip()
+    data = journal.load(journal_file())
+    # Look up the entry's current date for the fallback redirect.
+    existing = next((e for e in data.get("entries", []) if e.get("id") == entry_id), None)
+    current_date = existing["date"] if existing else None
+    try:
+        journal.move_entry(data, entry_id, new_date)
+        journal.save(journal_file(), data)
+        return redirect(url_for("journal_entry", date=new_date))
+    except ValueError:
+        flash("Could not move entry: that day already has an entry.")
+        fallback = current_date or journal.today_iso()
+        return redirect(url_for("journal_entry", date=fallback))
 
 
 @app.route("/journal/entries")

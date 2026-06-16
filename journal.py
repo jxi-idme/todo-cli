@@ -353,3 +353,33 @@ def delete_entry(data, entry_id):
     """Remove an entry by id. Unknown id = no-op."""
     data["entries"] = [e for e in data.get("entries", []) if e.get("id") != entry_id]
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Calendar helpers
+# --------------------------------------------------------------------------- #
+
+def entry_dates(data):
+    """Sorted list of YYYY-MM-DD strings that have an entry (for calendar dots)."""
+    return sorted(e["date"] for e in data.get("entries", []) if e.get("date"))
+
+
+def move_entry(data, entry_id, new_date):
+    """Move an entry to `new_date`.
+
+    Raises ValueError if `new_date` is not a valid YYYY-MM-DD, or if another
+    entry already occupies `new_date`. If `new_date` equals the entry's current
+    date, returns data unchanged (no-op). Unknown `entry_id` is also a no-op.
+    """
+    if not _valid_date(new_date):
+        raise ValueError(f"Invalid date: {new_date!r}")
+    entry = next((e for e in data.get("entries", []) if e.get("id") == entry_id), None)
+    if entry is None:
+        return data
+    if entry["date"] == new_date:
+        return data
+    conflict = get_entry_by_date(data, new_date)
+    if conflict is not None:
+        raise ValueError(f"An entry already exists for {new_date!r}")
+    entry["date"] = new_date
+    return data

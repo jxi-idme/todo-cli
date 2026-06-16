@@ -156,3 +156,27 @@ def test_save_bad_number_aborts_entirely(client):
     data = journal.load(_journal_path())
     assert journal.get_entry_by_date(data, "2026-06-15") is None
     assert "cousin lee" not in journal.section_by_id(data, tag_sid)["tags"]
+
+
+def test_move_entry_route(client):
+    client.post("/journal/save", data={"date": "2026-06-15", "title": "t", "body": ""})
+    data = journal.load(_journal_path())
+    eid = journal.get_entry_by_date(data, "2026-06-15")["id"]
+    resp = client.post(f"/journal/entry/{eid}/move", data={"date": "2026-06-20"})
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert journal.get_entry_by_date(data, "2026-06-15") is None
+    assert journal.get_entry_by_date(data, "2026-06-20") is not None
+
+
+def test_move_entry_route_rejects_occupied(client):
+    client.post("/journal/save", data={"date": "2026-06-15", "title": "t", "body": ""})
+    client.post("/journal/save", data={"date": "2026-06-20", "title": "x", "body": ""})
+    data = journal.load(_journal_path())
+    eid = journal.get_entry_by_date(data, "2026-06-15")["id"]
+    resp = client.post(f"/journal/entry/{eid}/move", data={"date": "2026-06-20"})
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    # both still exist; nothing moved
+    assert journal.get_entry_by_date(data, "2026-06-15") is not None
+    assert journal.get_entry_by_date(data, "2026-06-20")["title"] == "x"

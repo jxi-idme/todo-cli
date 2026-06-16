@@ -317,3 +317,51 @@ def test_delete_entry():
     e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
     journal.delete_entry(data, e["id"])
     assert data["entries"] == []
+
+
+# --------------------------------------------------------------------------- #
+# entry_dates
+# --------------------------------------------------------------------------- #
+
+def test_entry_dates_sorted_unique():
+    data = journal._empty()
+    journal.upsert_entry(data, "2026-06-15", "a", "", now=NOW)
+    journal.upsert_entry(data, "2026-06-13", "b", "", now=NOW)
+    assert journal.entry_dates(data) == ["2026-06-13", "2026-06-15"]
+    assert journal.entry_dates(journal._empty()) == []
+
+
+# --------------------------------------------------------------------------- #
+# move_entry
+# --------------------------------------------------------------------------- #
+
+def test_move_entry_to_empty_date():
+    data = journal._empty()
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
+    journal.move_entry(data, e["id"], "2026-06-20")
+    assert journal.get_entry_by_date(data, "2026-06-15") is None
+    assert journal.get_entry_by_date(data, "2026-06-20")["id"] == e["id"]
+
+
+def test_move_entry_rejects_occupied_target():
+    data = journal._empty()
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
+    journal.upsert_entry(data, "2026-06-20", "other", "", now=NOW)
+    with pytest.raises(ValueError):
+        journal.move_entry(data, e["id"], "2026-06-20")
+    # unchanged
+    assert journal.get_entry_by_date(data, "2026-06-15")["id"] == e["id"]
+
+
+def test_move_entry_rejects_bad_date():
+    data = journal._empty()
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
+    with pytest.raises(ValueError):
+        journal.move_entry(data, e["id"], "nope")
+
+
+def test_move_entry_same_date_is_noop():
+    data = journal._empty()
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
+    journal.move_entry(data, e["id"], "2026-06-15")
+    assert journal.get_entry_by_date(data, "2026-06-15")["id"] == e["id"]

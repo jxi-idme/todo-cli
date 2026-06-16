@@ -16,7 +16,15 @@
     <div class="top-line">
       <input type="text" name="title" placeholder="entry title" required
              value="{{ entry.title if entry else '' }}">
-      <input type="date" name="date" value="{{ date }}" required>
+      <div class="cal-field"
+           data-current-date="{{ date }}"
+           data-is-saved="{{ 'true' if entry else 'false' }}">
+        <button type="button" class="cal-trigger" aria-haspopup="dialog">
+          <span class="cal-trigger-label">{{ date }}</span>
+          <span class="cal-caret">▾</span>
+        </button>
+        <input type="hidden" name="date" class="cal-input" value="{{ date }}">
+      </div>
     </div>
 
     <p class="label">What happened today</p>
@@ -83,4 +91,19 @@
       <button type="submit" class="save">{{ "Update entry" if entry else "Save entry" }}</button>
     </div>
   </form>
+
+  {% if entry %}
+    <div class="move-row">
+      <button type="button" class="move-btn">Move entry to another day…</button>
+    </div>
+    <form id="move-form" method="post"
+          action="{{ url_for('journal_entry_move', entry_id=entry.id) }}">
+      <input type="hidden" name="date" class="move-input">
+    </form>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script type="application/json" id="entry-dates-data">{{ entry_dates | tojson }}</script>
+  <script src="{{ url_for('static', filename='journal.js') }}" defer></script>
 {% endblock %}
