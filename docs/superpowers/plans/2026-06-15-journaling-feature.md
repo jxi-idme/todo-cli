@@ -44,6 +44,10 @@ where they conflict:
   CSS lines; keep the rest.
 - The `static/img/pompompurin.gif` placeholder asset already exists (Task 12
   Step 1 is done).
+- **Journal nav (all journal templates):** the middle link is
+  `<a href="{{ url_for('journal_search') }}">Search</a>` — NOT "Past entries" /
+  `journal_list` (Task 9 was changed to a Search tab). Use this nav in
+  `journal_entry.html`, `journal_search.html`, and `journal_sections.html`.
 
 ---
 
@@ -53,7 +57,7 @@ where they conflict:
 - **Create `tests/test_journal.py`** — unit tests for `journal.py` (fixed `now`, `tmp_path`).
 - **Create `tests/test_journal_app.py`** — Flask route tests (temp `JOURNAL_FILE`).
 - **Create `templates/journal_entry.html`** — the per-date create/edit form.
-- **Create `templates/journal_list.html`** — past-entries list.
+- **Create `templates/journal_search.html`** — the Search tab (was `journal_list.html`; see Task 9).
 - **Create `templates/journal_sections.html`** — sections management page.
 - **Modify `templates/base.html`** — brand/nav become `{% block %}`s; add the Pompompurin toggle.
 - **Modify `app.py`** — `JOURNAL_FILE` config, Jinja globals, context processor, journal routes.
@@ -1359,103 +1363,194 @@ git commit -m "Add journal entry form, save route, and permanent/temporary tag h
 
 ---
 
-## Task 9: Past-entries list & delete
+## Task 9: Search tab (text + tags + numbers)
+
+> **Replaces the original "Past entries" list.** The calendar already handles
+> day-to-day navigation, so this tab is a filterable search/data view over all
+> entries. **Confirmed decisions:** filtering is **live / client-side** (entries
+> shipped as JSON, filtered in JS); multiple selected tags combine with **OR**;
+> each numeric section gets a **range (min–max) slider** with bounds
+> auto-derived from recorded values; multiple typed words combine with **AND**
+> and match **whole words, case-insensitive**, against the entry body; the three
+> filter types (text, tags, numbers) combine with **AND**. With no filters
+> active, **all entries** show (newest date first). Controls are server-rendered
+> from the live section/tag registry, so they auto-update as sections/tags are
+> added and reflow responsively. Tag toggles reuse the circular check circles.
 
 **Files:**
-- Modify: `app.py` (`journal_list`, add `journal_entry_delete`)
-- Replace: `templates/journal_list.html`
-- Test: `tests/test_journal_app.py`
+- Modify: `journal.py` — add `search_index`, `numeric_bounds`.
+- Modify: `app.py` — rename `journal_list` → `journal_search` (route `/journal/search`); add `journal_entry_delete`; pass search context.
+- Rename/replace: `templates/journal_list.html` → `templates/journal_search.html`; update the nav label **"Past entries" → "Search"** and the `url_for('journal_list')` link → `url_for('journal_search')` in `journal_entry.html` and `journal_sections.html` too.
+- Create: `static/journal-search.js`.
+- Modify: `static/style.css` — search panel, tag dropdown, range sliders, result rows.
+- Test: `tests/test_journal.py`, `tests/test_journal_app.py`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: `journal.py` helpers (test first)**
+
+```python
+# tests/test_journal.py — append
+def test_search_index_shape_and_order():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-13", "old", "ran in the park",
+                         tags={s["id"]: ["maya"]}, now=NOW)
+    journal.upsert_entry(data, "2026-06-15", "new", "quiet day", now=NOW)
+    idx = journal.search_index(data)
+    assert [i["date"] for i in idx] == ["2026-06-15", "2026-06-13"]   # newest first
+    older = idx[1]
+    assert older["title"] == "old" and older["body"] == "ran in the park"
+    assert older["tags"] == ["maya"]
+
+
+def test_numeric_bounds():
+    data = journal._empty()
+    s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    journal.upsert_entry(data, "2026-06-13", "a", "", numbers={s["id"]: "6"}, now=NOW)
+    journal.upsert_entry(data, "2026-06-15", "b", "", numbers={s["id"]: "9"}, now=NOW)
+    assert journal.numeric_bounds(data)[s["id"]] == [6.0, 9.0]
+    s2 = journal.add_section(data, "weight", "numeric", "#fff", unit="lbs")
+    assert s2["id"] not in journal.numeric_bounds(data)   # no values -> omitted
+```
+
+```python
+# journal.py — append
+def search_index(data):
+    """Per-entry payload for the client-side search tab (newest date first).
+
+    Each item: id, date, title, body, `tags` (flat sorted unique list of every
+    tag string on the entry, across all sections), and `numbers`
+    ({section_id: value}). Designed to be JSON-serialized into the page.
+    """
+    out = []
+    for e in entries_sorted(data):
+        tags = set()
+        for names in (e.get("tags") or {}).values():
+            for n in names or []:
+                tags.add(n)
+        out.append({
+            "id": e["id"],
+            "date": e["date"],
+            "title": e.get("title", ""),
+            "body": e.get("body", ""),
+            "tags": sorted(tags),
+            "numbers": dict(e.get("numbers") or {}),
+        })
+    return out
+
+
+def numeric_bounds(data):
+    """{section_id: [min, max]} over recorded values, for every numeric section
+    that has at least one value among entries. Used to size the range sliders;
+    sections with no recorded values are omitted."""
+    bounds = {}
+    for s in data.get("sections", []):
+        if s.get("type") != "numeric":
+            continue
+        vals = [e["numbers"][s["id"]] for e in data.get("entries", [])
+                if isinstance(e.get("numbers"), dict) and s["id"] in e["numbers"]]
+        if vals:
+            bounds[s["id"]] = [min(vals), max(vals)]
+    return bounds
+```
+
+Run: `.venv/bin/python -m pytest tests/test_journal.py -k "search_index or numeric_bounds" -q` → PASS.
+
+- [ ] **Step 2: `app.py` — search route, delete route, nav (test first)**
 
 ```python
 # tests/test_journal_app.py — append
-def test_past_entries_lists_newest_first(client):
+def test_search_lists_all_entries_newest_first(client):
     client.post("/journal/save", data={"date": "2026-06-10", "title": "Older", "body": ""})
     client.post("/journal/save", data={"date": "2026-06-14", "title": "Newer", "body": ""})
-    resp = client.get("/journal/entries")
+    resp = client.get("/journal/search")
     assert resp.status_code == 200
     body = resp.data.decode()
     assert body.index("Newer") < body.index("Older")
+    assert b"journal-search.js" in resp.data        # live filtering wired
+    assert b"entries-data" in resp.data             # entries embedded as JSON
 
 
 def test_delete_entry_removes_it(client):
     client.post("/journal/save", data={"date": "2026-06-10", "title": "Bye", "body": ""})
-    data = journal.load(_journal_path())
-    eid = journal.get_entry_by_date(data, "2026-06-10")["id"]
+    eid = journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-10")["id"]
     resp = client.post(f"/journal/entry/{eid}/delete")
     assert resp.status_code == 302
-    data = journal.load(_journal_path())
-    assert journal.get_entry_by_date(data, "2026-06-10") is None
+    assert journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-10") is None
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-
-Run: `pytest tests/test_journal_app.py -k "past_entries or delete_entry" -q`
-Expected: FAIL — list shows placeholder text; delete route missing.
-
-- [ ] **Step 3: Add the delete route (the `journal_list` route already exists from Task 7)**
+Replace the Task-7 `journal_list` stub route with `journal_search`, and add the delete route:
 
 ```python
-# app.py — append
+# app.py
+@app.route("/journal/search")
+def journal_search():
+    data = journal.load(journal_file())
+    return render_template(
+        "journal_search.html", data=data,
+        entries=journal.search_index(data),
+        tag_sections=[s for s in journal.active_sections(data) if s["type"] == "tag"],
+        num_sections=[s for s in journal.active_sections(data) if s["type"] == "numeric"],
+        bounds=journal.numeric_bounds(data),
+    )
+
+
 @app.route("/journal/entry/<entry_id>/delete", methods=["POST"])
 def journal_entry_delete(entry_id):
     data = journal.load(journal_file())
     journal.delete_entry(data, entry_id)
     journal.save(journal_file(), data)
     flash("Entry deleted.")
-    return redirect(url_for("journal_list"))
+    return redirect(url_for("journal_search"))
 ```
 
-- [ ] **Step 4: Replace `templates/journal_list.html` with a standalone template**
+Update the nav in `journal_entry.html` and `journal_sections.html` (and create the same nav in `journal_search.html`): the middle link becomes
+`<a href="{{ url_for('journal_search') }}">Search</a>`.
 
-```html
-{% extends "base.html" %}
-{% block brand %}
-  <img class="mascot mascot-puri"
-       src="{{ url_for('static', filename='img/pompompurin.gif') }}"
-       width="56" height="56" alt="pompompurin">
-  <span class="site-title">journal</span>
-{% endblock %}
-{% block nav %}
-  <a href="{{ url_for('journal_today') }}">New entry</a>
-  <a href="{{ url_for('journal_list') }}">Past entries</a>
-  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
-{% endblock %}
-{% block content %}
-  <h2>Past entries</h2>
-  {% if entries %}
-    <ul class="entry-list">
-      {% for e in entries %}
-        <li class="entry-row">
-          <a class="entry-link" href="{{ url_for('journal_entry', date=e.date) }}">
-            <span class="entry-date">{{ e.date }}</span>
-            <span class="entry-title">{{ e.title }}</span>
-          </a>
-          <button form="del-{{ e.id }}" type="submit" class="delete">x</button>
-        </li>
-      {% endfor %}
-    </ul>
-    {% for e in entries %}
-      <form id="del-{{ e.id }}" method="post"
-            action="{{ url_for('journal_entry_delete', entry_id=e.id) }}"></form>
-    {% endfor %}
-  {% else %}
-    <p class="empty">No entries yet. <a href="{{ url_for('journal_today') }}">Write today's</a>.</p>
-  {% endif %}
-{% endblock %}
-```
+- [ ] **Step 3: `templates/journal_search.html`** (extends `base.html`; brand via `brand_mascot`/`brand_title` per the AMENDMENT)
 
-- [ ] **Step 5: Run to verify they pass**
+Structure (fill with real markup):
+- Brand/nav blocks (Pompompurin brand; nav: New entry · **Search** · Manage sections & tags).
+- A `.search-panel`:
+  - Text input: `<input type="text" id="q" placeholder="search words in entries…">`.
+  - A **tag dropdown**: a `.tag-dropdown` button ("Tags") that toggles a `.tag-dropdown-panel`. Inside, for each tag section render a small group header (the section name) and its tags as `.chip.tag-toggle` checkbox chips (circular check circles, `data-tag="<name>"`). Selecting any is OR.
+  - For each numeric section in `num_sections` that has bounds, a `.num-filter` with the section name + unit and a **dual-range slider** (two `<input type="range">` with `data-section="<id>"`, `data-role="min"|"max"`, `min`/`max`/`value` from `bounds[s.id]`, plus a readout span). Sections without recorded values: show a disabled note or omit.
+- A results area: `<p class="result-count"></p>` and `<ul class="entry-list">` of rows — date + title linking to `journal_entry`, the entry's tags as small chips, and any numbers; each row carries `data-*` or is matched against the JSON by id. Include a per-row delete form (like the old list) so entries can still be removed.
+- Embed data + script via the scripts block:
+  ```html
+  {% block scripts %}
+    <script type="application/json" id="entries-data">{{ entries | tojson }}</script>
+    <script type="application/json" id="bounds-data">{{ bounds | tojson }}</script>
+    <script src="{{ url_for('static', filename='journal-search.js') }}" defer></script>
+  {% endblock %}
+  ```
 
-Run: `pytest tests/test_journal_app.py -q`
-Expected: PASS.
+- [ ] **Step 4: `static/journal-search.js`** (vanilla, no libraries)
 
-- [ ] **Step 6: Commit**
+Behavior:
+- Parse `#entries-data` (list) and `#bounds-data`.
+- Read controls: text `#q`; checked tag chips (collect selected `data-tag` values); each numeric section's two range inputs (min/max) keyed by `data-section`.
+- **Filter function** (recomputed on every `input`/`change`):
+  - **Text:** split `q` on whitespace → words; lowercase. An entry passes if, for **every** word, a whole-word match exists in `entry.body.toLowerCase()` — use `new RegExp('\\\\b' + escapeRegExp(word) + '\\\\b')`. Empty query → passes.
+  - **Tags:** selected = set of checked tags. If non-empty, entry passes only if `entry.tags` intersects it (**OR**). Empty → passes.
+  - **Numbers:** for each numeric section, read `[lo, hi]` from its sliders. The filter is **active** only if `lo > boundMin || hi < boundMax`. When active, entry passes only if it has a value for that section AND `lo <= value <= hi`. Inactive → passes.
+  - An entry shows only if it passes **all** of the above (**AND**).
+- Re-render the results list (show/hide rows by id, or rebuild) and update `.result-count` (e.g. "7 entries").
+- **Tag dropdown:** toggle open/close on button click; close on outside click / Esc (reuse the calendar's pattern). Keep the chips' circular-check look.
+- **Dual-range slider:** clamp so `min <= max` (when one handle crosses the other, push the other); update the readout (`lo–hi unit`); recompute filter.
+- Guard: if `#entries-data` missing, bail (not on the search page).
+
+- [ ] **Step 5: `static/style.css`** — dark, on-theme styles for `.search-panel` (panel card, responsive flex/grid that wraps), `.tag-dropdown`/`.tag-dropdown-panel` (panel popover, grouped chips), the range sliders (themed track/handles via `accent-color: var(--accent)` and a sensible dual-range layout), `.num-filter` rows, `.result-count`, and reuse `.entry-list`/`.entry-row`/`.entry-link` from the existing CSS. Must match the dark/amber/monospace theme and resize cleanly.
+
+- [ ] **Step 6: Verify**
+
+Run: `.venv/bin/python -m pytest tests/test_journal.py tests/test_journal_app.py tests/test_app.py -q` → all pass.
+Manual: save several entries with varied bodies/tags/numbers; confirm text (whole-word, AND), tag (OR), and range filters narrow results live and combine with AND; confirm controls reflect newly added sections/tags and reflow on resize.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add app.py templates/journal_list.html tests/test_journal_app.py
-git commit -m "Add journal past-entries list and entry delete"
+git add journal.py app.py templates/ static/journal-search.js static/style.css tests/
+git commit -m "Replace past-entries list with a live search tab (text/tags/numbers)"
 ```
 
 ---
@@ -1753,7 +1848,7 @@ This task is visual; verify by eye rather than by unit test.
 - [ ] **Step 2: Verify visually**
 
 Run: `flask --app app run --port 5001`
-Open `http://127.0.0.1:5001/journal`, the past-entries page, and the manage page.
+Open `http://127.0.0.1:5001/journal`, the Search page, and the manage page.
 Expected: dark amber/monospace styling matching the todo page; two-column section grid; dashed temporary chips; live color preview on the manage page.
 
 - [ ] **Step 3: Commit**
@@ -1792,7 +1887,7 @@ Run: `flask --app app run --port 5001`
 - Click Pompompurin on the todo page → lands on `/journal` (today's entry).
 - Write a title + body, select/add tags, enter a number, Save → redirected to the entry, values persisted.
 - Pompompurin on the journal page → back to the todo page.
-- Past entries lists the entry; deleting removes it.
+- Search tab lists the entry; text/tag/range filters narrow it live (AND); deleting removes it.
 - Manage page: add a section (tag + numeric), rename, recolor with live preview, add/remove permanent tags, delete a section (it disappears from the entry form but old entries keep their data).
 
 - [ ] **Step 4: Commit**
@@ -1806,6 +1901,6 @@ git commit -m "Add placeholder Pompompurin asset; journaling feature complete"
 
 ## Self-review notes
 
-- **Spec coverage:** persistence/seeding (T1), section helpers (T2), section CRUD + validation (T3), permanent tags (T4), entry helpers (T5), upsert one-per-date + delete (T6), Flask wiring + toggle + nav blocks (T7), entry form + permanent/temporary tags + archived-data preservation (T8), past entries + delete (T9), management page + color preview (T10), styling (T11), asset + full verification (T12). Tasks-side analytics contract requires no code (documented in spec).
+- **Spec coverage:** persistence/seeding (T1), section helpers (T2), section CRUD + validation (T3), permanent tags (T4), entry helpers (T5), upsert one-per-date + delete (T6), Flask wiring + toggle + nav blocks (T7), entry form + permanent/temporary tags + archived-data preservation (T8), search tab — text/tags/numbers + delete (T9), management page + color preview (T10), styling (T11), asset + full verification (T12). Tasks-side analytics contract requires no code (documented in spec).
 - **Security invariant:** section/tag names go through `_TAG_NAME_RE`; colors through `_HEX_COLOR_RE`; units are escaped + length-capped, never placed in `style`.
 - **Analytics-readiness:** entry maps keyed by stable section id; sections soft-deleted; numbers stored as floats; dates/timestamps ISO.
