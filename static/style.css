@@ -486,7 +486,7 @@ h2 {
    white ring here. Flex on the chip keeps it centered with the label text. */
 .section .chip input[type="checkbox"] {
   margin: 0;
-  border-color: #14161a;        /* dark outer ring */
+  border-color: #2a2e37;        /* outer ring -- sits well against the page bg */
   background-color: #cdd2da;     /* lighter inner circle */
 }
 .section .chip input[type="checkbox"]:checked {
