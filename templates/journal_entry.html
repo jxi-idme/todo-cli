@@ -44,7 +44,7 @@
             <div class="chips">
               {# Registered (permanent) tags as toggle chips. #}
               {% for tag in s.tags %}
-                <label class="chip">
+                <label class="chip tag-toggle">
                   <input type="checkbox" name="tag:{{ s.id }}" value="{{ tag }}"
                          {% if tag in selected %}checked{% endif %}> {{ tag }}
                 </label>
@@ -53,7 +53,7 @@
                  since-deleted) render as dashed, pre-checked chips. #}
               {% for tag in selected %}
                 {% if not is_registered_tag(data, s.id, tag) %}
-                  <label class="chip temp">
+                  <label class="chip temp tag-toggle">
                     <input type="checkbox" name="tag:{{ s.id }}" value="{{ tag }}" checked> {{ tag }}
                   </label>
                 {% endif %}
