@@ -208,8 +208,11 @@
       num.textContent = String(day);
       cell.appendChild(num);
 
-      if (iso === today)   cell.classList.add('is-today');
-      if (iso === selDate) cell.classList.add('is-selected');
+      if (iso === today) cell.classList.add('is-today');
+      // Selection highlight is only meaningful when navigating, not when
+      // choosing a move target -- otherwise the current (occupied) date would
+      // collide with the disabled style in move mode.
+      if (iso === selDate && !moveMode) cell.classList.add('is-selected');
 
       if (entryDatesSet.has(iso)) {
         if (moveMode) {

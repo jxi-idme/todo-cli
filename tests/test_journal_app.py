@@ -180,3 +180,13 @@ def test_move_entry_route_rejects_occupied(client):
     # both still exist; nothing moved
     assert journal.get_entry_by_date(data, "2026-06-15") is not None
     assert journal.get_entry_by_date(data, "2026-06-20")["title"] == "x"
+
+
+def test_move_entry_route_rejects_invalid_date(client):
+    client.post("/journal/save", data={"date": "2026-06-15", "title": "t", "body": ""})
+    data = journal.load(_journal_path())
+    eid = journal.get_entry_by_date(data, "2026-06-15")["id"]
+    resp = client.post(f"/journal/entry/{eid}/move", data={"date": "not-a-date"})
+    assert resp.status_code == 302
+    # the entry stays put on its original day
+    assert journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-15") is not None
