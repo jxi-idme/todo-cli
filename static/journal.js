@@ -270,14 +270,21 @@
     } else {
       // New (unsaved) entry
       if (entryDatesSet.has(dateStr)) {
-        confirmModal(
-          'Opening ' + prettyDate(dateStr) + ' will discard your current entry. Continue?'
-        ).then(function (confirmed) {
-          if (confirmed) {
-            closePopover();
-            window.location = '/journal/' + dateStr;
-          }
-        });
+        if (dirty) {
+          // Only warn if the user actually typed/selected something to lose.
+          confirmModal(
+            'Opening ' + prettyDate(dateStr) + ' will discard your current entry. Continue?'
+          ).then(function (confirmed) {
+            if (confirmed) {
+              closePopover();
+              window.location = '/journal/' + dateStr;
+            }
+          });
+        } else {
+          // Nothing entered yet -- just open that day, no warning.
+          closePopover();
+          window.location = '/journal/' + dateStr;
+        }
       } else {
         // Empty day: just update the date field in place, no navigation
         hiddenInput.value = dateStr;
