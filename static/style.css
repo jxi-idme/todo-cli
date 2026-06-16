@@ -513,6 +513,7 @@ h2 {
 .section .chip.temp { border-style: dashed; font-style: italic; color: var(--muted); }
 .section .newtag { margin-top: 0.6rem; display: flex; gap: 0.4rem; }
 .section .newtag input { flex: 1; min-width: 0; }
+.section .newtag select { flex: 0 0 auto; min-width: 7.5rem; }
 
 /* ----- past entries ----- */
 .entry-list { list-style: none; padding: 0; }
