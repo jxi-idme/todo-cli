@@ -289,7 +289,7 @@
     return y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
   }
 
-  function buildMonthGrid(year, month, present, todayIso) {
+  function buildMonthGrid(year, month, present, todayIso, marked) {
     var wrap = document.createElement("div");
     wrap.className = "cal-month";
 
@@ -324,7 +324,25 @@
       num.className = "cal-day-num";
       num.textContent = String(day);
       cell.appendChild(num);
-      if (present[iso]) {
+      // Optional second marked-set (e.g. task completions) sits beside the
+      // entry dot in --accent-dim. When `marked` is given, both dots live in a
+      // flex row so they render side by side; existing callers pass no
+      // `marked` arg and keep the original single stacked dot.
+      if (marked) {
+        var dots = document.createElement("span");
+        dots.className = "cal-dots-row";
+        if (present[iso]) {
+          var ed = document.createElement("span");
+          ed.className = "cal-dot";
+          dots.appendChild(ed);
+        }
+        if (marked[iso]) {
+          var td = document.createElement("span");
+          td.className = "cal-dot cal-dot-alt";
+          dots.appendChild(td);
+        }
+        if (dots.children.length) cell.appendChild(dots);
+      } else if (present[iso]) {
         var dot = document.createElement("span");
         dot.className = "cal-dot";
         cell.appendChild(dot);
@@ -996,6 +1014,104 @@
         U.text(svg, pad + bw + 4, y + 12, freq[k], c.muted, { size: 9 });
       });
       container.appendChild(svg);
+    },
+  });
+
+  // --- Tasks: tasks completed vs. a journal numeric (scatter) ---
+  // Mirrors the `numeric-scatter` chart (min/max axis + U.drawDot), but with
+  // one small-multiple per numeric section (like `numeric-line`/`tag-frequency`
+  // iterate). x = that day's completed-task count; y = the journal numeric.
+  CHARTS.push({
+    id: "task-numeric-scatter", panel: "tasks",
+    title: "Tasks completed vs. journal number",
+    render: function (container, entries, sections, c) {
+      var nums = U.numericSections(sections);
+      if (!nums.length) { U.empty(container, "No numeric sections."); return; }
+      var byDay = taskThroughput();  // {date: count}, already date-filtered
+      var rendered = false;
+      nums.forEach(function (s) {
+        // Per-day pairs: y from the day's journal value, x from completions.
+        var pairs = entries.filter(function (e) {
+          return (e.numbers || {})[s.id] != null;
+        }).map(function (e) {
+          return { x: byDay[e.date] || 0, y: Number(e.numbers[s.id]) };
+        });
+        if (pairs.length < 2) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name + (s.unit ? " (" + s.unit + ")" : "");
+        block.appendChild(h4);
+        var w = 600, h = 240, pad = 36;
+        var svg = U.svg(w, h);
+        var xs = pairs.map(function (p) { return p.x; });
+        var ys = pairs.map(function (p) { return p.y; });
+        var xMin = Math.min.apply(null, xs), xMax = Math.max.apply(null, xs);
+        var yMin = Math.min.apply(null, ys), yMax = Math.max.apply(null, ys);
+        var xSpan = xMax - xMin || 1, ySpan = yMax - yMin || 1;
+        U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 4, c);
+        pairs.forEach(function (p) {
+          var x = (xMax - xMin) === 0
+            ? pad + (w - pad - 10) / 2
+            : pad + (w - pad - 10) * ((p.x - xMin) / xSpan);
+          var y = (yMax - yMin) === 0
+            ? 10 + (h - pad - 10) / 2
+            : 10 + (h - pad - 10) * (1 - (p.y - yMin) / ySpan);
+          U.drawDot(svg, x, y, 3, U.colorMix(s.color, 80));
+        });
+        U.text(svg, w / 2, h - 2, "tasks completed (x)  vs  " + s.name + " (y)",
+               c.muted, { anchor: "middle", size: 9 });
+        block.appendChild(svg);
+        U.statsRow(block, [["points", pairs.length]]);
+        container.appendChild(block);
+      });
+      if (!rendered) {
+        U.empty(container, "Need 2+ days with both a journal number and a known task-completion count.");
+      }
+    },
+  });
+
+  // --- Tasks: entry-day vs. task-completion-day calendar overlay ---
+  // Mirrors `calendar-heatmap` + buildMonthGrid; entry days get the standard
+  // amber dot (present), task-completion days get an offset --accent-dim dot.
+  CHARTS.push({
+    id: "task-entry-calendar", panel: "tasks", title: "Entries & task completions",
+    render: function (container, entries, sections, c) {
+      var present = {};
+      uniqueDates(entries).forEach(function (d) { present[d] = true; });
+      var done = taskThroughput();  // {date: count}, already date-filtered
+      var entryDates = Object.keys(present);
+      var doneDates = Object.keys(done);
+      if (!entryDates.length && !doneDates.length) {
+        U.empty(container, "No entries or task completions in this range.");
+        return;
+      }
+      var now = new Date();
+      var todayIso = calIso(now.getFullYear(), now.getMonth(), now.getDate());
+
+      // Span every calendar month between the earliest and latest marked day.
+      var all = entryDates.concat(doneDates).sort();
+      var first = new Date(all[0] + "T00:00:00");
+      var last = new Date(all[all.length - 1] + "T00:00:00");
+      var wrap = document.createElement("div");
+      wrap.className = "analytics-cal";
+      var y = first.getFullYear(), m = first.getMonth();
+      while (y < last.getFullYear() || (y === last.getFullYear() && m <= last.getMonth())) {
+        wrap.appendChild(buildMonthGrid(y, m, present, todayIso, done));
+        m++;
+        if (m > 11) { m = 0; y++; }
+      }
+      container.appendChild(wrap);
+      // Legend: which dot means what.
+      var legend = U.svg(600, 22);
+      U.drawDot(legend, 8, 11, 4, c.accent);
+      U.text(legend, 18, 14, "journal entry", c.muted, { size: 9 });
+      U.drawDot(legend, 120, 11, 4, U.colorMix(c.accent, 45));
+      U.text(legend, 130, 14, "task completed", c.muted, { size: 9 });
+      container.appendChild(legend);
+      U.statsRow(container, [["entry days", entryDates.length],
+                             ["completion days", doneDates.length]]);
     },
   });
 

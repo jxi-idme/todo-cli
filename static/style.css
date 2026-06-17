@@ -1149,6 +1149,11 @@ h2 {
 .analytics-cal .cal-month-title { margin-bottom: 0.55rem; }
 .analytics-cal .cal-day { cursor: default; }
 .analytics-cal .cal-day:not(.cal-day-blank):hover { background: none; }
+/* Entry + completion dots sit side by side in a small flex row. */
+.cal-dots-row { display: flex; gap: 2px; margin-top: 2px; }
+.cal-dots-row .cal-dot { margin-top: 0; }
+/* Task-completion dot: dimmer amber, distinct from the entry dot. */
+.cal-dot-alt { background: var(--accent-dim); }
 
 /* ===================== custom select / date popovers ===================== */
 /* Themed replacements for the un-stylable native <select> and date popups. */
