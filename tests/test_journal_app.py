@@ -353,3 +353,32 @@ def test_readd_archived_tag_via_form_unarchives_it(client):
     data = journal.load(_journal_path())
     assert "maya" in journal.section_by_id(data, sid)["tags"]
     assert "maya" not in journal.section_by_id(data, sid)["archived_tags"]
+
+
+# --------------------------------------------------------------------------- #
+# Analytics page
+# --------------------------------------------------------------------------- #
+
+def test_analytics_page_renders(client):
+    resp = client.get("/journal/analytics")
+    assert resp.status_code == 200
+    assert b"analytics-root" in resp.data        # the JS mount point
+    assert b"analytics.js" in resp.data          # script is wired up
+
+
+def test_analytics_data_returns_json(client):
+    resp = client.get("/journal/analytics/data")
+    assert resp.status_code == 200
+    assert resp.is_json
+    payload = resp.get_json()
+    assert set(payload) == {"sections", "entries", "date_range"}
+    # seeded store has the six default sections
+    assert [s["name"] for s in payload["sections"]][0] == "people"
+
+
+def test_analytics_route_not_shadowed_by_date_route(client):
+    """`/journal/analytics` must hit the analytics page, not be parsed as a
+    date by /journal/<date>."""
+    resp = client.get("/journal/analytics")
+    assert resp.status_code == 200
+    assert b"analytics-root" in resp.data

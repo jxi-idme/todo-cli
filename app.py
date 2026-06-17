@@ -10,7 +10,7 @@ import signal
 import threading
 import time
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 import journal
 import todo
@@ -303,6 +303,21 @@ def journal_entry(date):
     if not journal._valid_date(date):
         return redirect(url_for("journal_today"))
     return _render_entry(data, date)
+
+
+@app.route("/journal/analytics")
+def journal_analytics():
+    """The analytics dashboard shell. Data is fetched client-side from
+    /journal/analytics/data, so no data is passed to the template."""
+    return render_template("journal_analytics.html")
+
+
+@app.route("/journal/analytics/data")
+def journal_analytics_data():
+    """JSON feed for the analytics charts. Fetched on page load and on window
+    focus, so it always reflects the latest saved entries."""
+    data = journal.load(journal_file())
+    return jsonify(journal.analytics_payload(data))
 
 
 def _collect_entry_fields(form, data):
