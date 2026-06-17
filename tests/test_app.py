@@ -559,3 +559,22 @@ def test_post_tags_invalid_color_flashes(client):
 def test_heartbeat_returns_204(client):
     resp = client.get("/heartbeat")
     assert resp.status_code == 204
+
+
+def test_refresh_saves_difficulty(client):
+    client.post("/add", data={"title": "rate me"})
+    data = todo.load(_data_path(client))
+    tid = data["active"][0]["id"]
+    resp = client.post("/refresh", data={"completed": tid, f"difficulty:{tid}": "hard"})
+    assert resp.status_code == 302
+    data = todo.load(_data_path(client))
+    assert data["archive"][0]["difficulty"] == "hard"
+
+
+def test_active_page_has_difficulty_picker(client):
+    client.post("/add", data={"title": "task one"})
+    html = client.get("/").get_data(as_text=True)
+    assert 'class="difficulty-picker"' in html
+    data = todo.load(_data_path(client))
+    tid = data["active"][0]["id"]
+    assert f'name="difficulty:{tid}"' in html

@@ -90,6 +90,17 @@
             <a class="edit" href="{{ url_for('edit', task_id=task.id) }}">edit</a>
             <!-- Separate small form so deleting doesn't archive everything. -->
             <button form="delete-{{ task.id }}" type="submit" class="delete">x</button>
+            {# Difficulty picker — hidden until this task is checked done.
+               Optional: no option is selected by default. #}
+            <span class="difficulty-picker" hidden>
+              <span class="difficulty-prompt">difficulty:</span>
+              <label class="kind-toggle-opt"><input type="radio"
+                     name="difficulty:{{ task.id }}" value="easy"> easy</label>
+              <label class="kind-toggle-opt"><input type="radio"
+                     name="difficulty:{{ task.id }}" value="medium"> medium</label>
+              <label class="kind-toggle-opt"><input type="radio"
+                     name="difficulty:{{ task.id }}" value="hard"> hard</label>
+            </span>
           </li>
         {% endfor %}
       </ul>

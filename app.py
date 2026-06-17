@@ -217,8 +217,11 @@ def edit_post(task_id):
 @app.route("/refresh", methods=["POST"])
 def refresh():
     completed_ids = request.form.getlist("completed")
+    # Optional per-task difficulty radios: difficulty:<id> = easy|medium|hard.
+    difficulties = {tid: request.form.get("difficulty:" + tid)
+                    for tid in completed_ids}
     data = todo.load(data_file())
-    todo.refresh(data, completed_ids)
+    todo.refresh(data, completed_ids, difficulties=difficulties)
     todo.save(data_file(), data)
     return redirect(url_for("index"))
 

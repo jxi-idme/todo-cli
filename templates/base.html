@@ -190,6 +190,24 @@
       });
     }());
 
+    // Reveal a task's difficulty picker only while it's checked done.
+    document.querySelectorAll('.task-check').forEach(function (cb) {
+      var li = cb.closest('.task');
+      if (!li) return;
+      var picker = li.querySelector('.difficulty-picker');
+      if (!picker) return;
+      function sync() {
+        picker.hidden = !cb.checked;
+        if (!cb.checked) {
+          picker.querySelectorAll('input[type="radio"]').forEach(function (r) {
+            r.checked = false;  // clearing the check also clears the rating
+          });
+        }
+      }
+      cb.addEventListener('change', sync);
+      sync();
+    });
+
     // Keep the server alive while this tab is open. When the tab closes,
     // pings stop and the server auto-quits after ~30 s (AUTO_QUIT mode).
     setInterval(function () { fetch('/heartbeat', { method: 'GET' }); }, 10000);
