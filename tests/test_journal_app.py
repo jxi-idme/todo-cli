@@ -382,3 +382,11 @@ def test_analytics_route_not_shadowed_by_date_route(client):
     resp = client.get("/journal/analytics")
     assert resp.status_code == 200
     assert b"analytics-root" in resp.data
+
+
+def test_journal_nav_has_analytics_link(client):
+    """Every journal page exposes the Analytics link in its nav."""
+    for path in ["/journal", "/journal/search", "/journal/sections"]:
+        resp = client.get(path)
+        assert resp.status_code == 200
+        assert b'href="/journal/analytics"' in resp.data, path
