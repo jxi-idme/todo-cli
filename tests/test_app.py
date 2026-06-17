@@ -17,6 +17,7 @@ def client(tmp_path):
     flask_app = app_module.app
     flask_app.config["TESTING"] = True
     flask_app.config["DATA_FILE"] = str(data_file)
+    flask_app.config["JOURNAL_FILE"] = str(tmp_path / "journal.json")
     # Start each test from a clean, fully-initialized store (includes the
     # "tags" key) rather than the migration path.
     todo.save(str(data_file), todo._empty())
@@ -608,3 +609,12 @@ def test_archive_page_shows_difficulty_control(client):
     _archive_one(client)
     html = client.get("/archive").get_data(as_text=True)
     assert "difficulty-select" in html
+
+
+def test_analytics_data_includes_tasks_block(client):
+    client.post("/add", data={"title": "open task"})
+    resp = client.get("/journal/analytics/data")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert "tasks" in payload
+    assert "archive" in payload["tasks"] and "active" in payload["tasks"]

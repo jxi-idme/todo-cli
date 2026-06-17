@@ -330,10 +330,17 @@ def journal_analytics():
 
 @app.route("/journal/analytics/data")
 def journal_analytics_data():
-    """JSON feed for the analytics charts. Fetched on page load and on window
-    focus, so it always reflects the latest saved entries."""
-    data = journal.load(journal_file())
-    return jsonify(journal.analytics_payload(data))
+    """JSON feed for the analytics charts (journal + tasks). Fetched on load and
+    on window focus; the client filters by date and renders."""
+    payload = journal.analytics_payload(journal.load(journal_file()))
+    payload["tasks"] = todo.task_payload(todo.load(data_file()))
+    # Widen the shared date range so the date filter spans both domains.
+    jr, tr = payload["date_range"], payload["tasks"]["date_range"]
+    mins = [d for d in (jr.get("min"), tr.get("min")) if d]
+    maxs = [d for d in (jr.get("max"), tr.get("max")) if d]
+    payload["date_range"] = {"min": min(mins) if mins else None,
+                             "max": max(maxs) if maxs else None}
+    return jsonify(payload)
 
 
 def _collect_entry_fields(form, data):

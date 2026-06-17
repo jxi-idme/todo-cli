@@ -5,6 +5,7 @@ import pytest
 
 import app as app_module
 import journal
+import todo
 
 
 @pytest.fixture
@@ -13,8 +14,11 @@ def client(tmp_path):
     flask_app = app_module.app
     flask_app.config["TESTING"] = True
     flask_app.config["JOURNAL_FILE"] = str(journal_file)
+    flask_app.config["DATA_FILE"] = str(tmp_path / "tasks.json")
     # Seeded store (six default sections), mirroring first run.
     journal.save(str(journal_file), journal._seeded())
+    # Empty task store so the analytics route never touches the real one.
+    todo.save(str(tmp_path / "tasks.json"), todo._empty())
     with flask_app.test_client() as c:
         yield c
 
@@ -371,7 +375,7 @@ def test_analytics_data_returns_json(client):
     assert resp.status_code == 200
     assert resp.is_json
     payload = resp.get_json()
-    assert set(payload) == {"sections", "entries", "date_range"}
+    assert {"sections", "entries", "date_range", "tasks"} <= set(payload)
     # seeded store has the six default sections
     assert [s["name"] for s in payload["sections"]][0] == "people"
 

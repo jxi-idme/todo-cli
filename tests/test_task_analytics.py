@@ -54,3 +54,18 @@ def test_task_tag_frequency():
             _arch("b", "2026-06-16T09:00:00", tags=["work"])]
     assert todo.task_tag_frequency(arch) == {"work": 2, "home": 1}
     assert todo.task_tag_frequency(arch, start="2026-06-16") == {"work": 1}
+
+
+def test_task_payload_shape():
+    data = todo._empty()
+    from datetime import datetime
+    now = datetime(2026, 6, 15, 9, 0, 0)
+    todo.add_task(data, "open", now=now)
+    todo.add_task(data, "done", now=now)
+    did = data["active"][1]["id"]
+    todo.refresh(data, [did], difficulties={did: "hard"}, now=now)
+    p = todo.task_payload(data)
+    assert {"active", "archive", "expired", "tags", "date_range"} <= set(p)
+    assert p["archive"][0]["completed"][:10] == "2026-06-15"
+    assert p["archive"][0]["difficulty"] == "hard"
+    assert p["date_range"]["min"] is not None

@@ -677,3 +677,40 @@ def task_tag_frequency(tasks, start=None, end=None, date_field="completed"):
         for tag in t.get("tags") or []:
             out[tag] = out.get(tag, 0) + 1
     return out
+
+
+def task_payload(data):
+    """Raw task records for the analytics 'Tasks' tab (JS aggregates + filters)."""
+    def base(t):
+        return {"id": t.get("id"), "title": t.get("title", ""),
+                "created": t.get("created"), "due": t.get("due"),
+                "recurrence": t.get("recurrence"), "tags": list(t.get("tags") or [])}
+
+    active = [base(t) for t in data.get("active", [])]
+    archive = []
+    for t in data.get("archive", []):
+        rec = base(t)
+        rec["completed"] = t.get("completed")
+        rec["difficulty"] = _norm_difficulty(t.get("difficulty"))
+        archive.append(rec)
+    expired = []
+    for t in data.get("expired", []):
+        rec = base(t)
+        rec["expired_at"] = t.get("expired_at")
+        expired.append(rec)
+
+    dates = []
+    for t in data.get("archive", []):
+        if t.get("completed"):
+            dates.append(t["completed"][:10])
+    for t in data.get("expired", []):
+        if t.get("expired_at"):
+            dates.append(t["expired_at"][:10])
+    for bucket in ("active", "archive", "expired"):
+        for t in data.get(bucket, []):
+            if t.get("created"):
+                dates.append(t["created"][:10])
+    dates.sort()
+    date_range = {"min": dates[0], "max": dates[-1]} if dates else {"min": None, "max": None}
+    return {"active": active, "archive": archive, "expired": expired,
+            "tags": dict(data.get("tags", {})), "date_range": date_range}
