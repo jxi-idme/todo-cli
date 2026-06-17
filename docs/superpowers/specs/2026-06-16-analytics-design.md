@@ -75,7 +75,7 @@ All helpers are pure functions. `entries` is a list of entry dicts (already load
 | `analytics_payload` | `(data)` | Full API response dict |
 | `tag_frequency` | `(entries, section_id, start, end)` | `{tag: count}` |
 | `entry_streak` | `(entries)` | `{"current": N, "longest": N, "last_date": "..."}` |
-| `tag_streak` | `(entries, section_id, tag)` | `{"current": N, "longest": N}` |
+| `tag_streak` | `(entries, section_id, tag)` | `{"current": N, "longest": N, "avg": N}` |
 | `numeric_series` | `(entries, section_id, start, end)` | `[{"date": "...", "value": N}, ...]` sorted ascending |
 | `date_density` | `(entries, start, end)` | `{"YYYY-MM-DD": 1}` (presence per day) |
 | `tag_cooccurrence` | `(entries, section_id, start, end)` | `{tag: {other_tag: count}}` |
@@ -85,8 +85,30 @@ All helpers are pure functions. `entries` is a list of entry dicts (already load
 | `word_counts` | `(entries, start, end)` | `[{"date": "...", "count": N}, ...]` |
 | `entry_gaps` | `(entries, start, end)` | `[{"gap_days": N, "after_date": "..."}, ...]` |
 | `creation_hours` | `(entries, start, end)` | `{0: count, 1: count, ..., 23: count}` |
+| `describe` | `(values)` | `{"mean": N, "median": N, "mode": N, "stdev": N, "min": N, "max": N, "count": N}` |
 
 `analytics_payload` assembles sections, stripped entries (body text included for JS word count), and `date_range`. It does not call the other helpers — those are called client-side by JS on the fetched data, keeping the server response flat and the aggregation logic testable independently.
+
+`describe` is a general-purpose stats helper using Python's stdlib `statistics` module (no new dependencies). It accepts any list of floats/ints and returns all six summary statistics. `mode` returns `None` if all values are unique (no repeated value). `stdev` returns `None` for fewer than 2 values. JS has an equivalent `describe(values)` utility function that the chart registry's render functions call on their computed value arrays.
+
+---
+
+## Statistical Displays
+
+Each relevant chart renders a compact stats row immediately below it — `--muted` label, `--text` value, monospace, inline chips. Stats are recomputed whenever the date filter changes.
+
+| Chart | Stats shown |
+|---|---|
+| **Numeric section line chart** | mean · median · mode · std dev · min · max (via `describe` on the series values) |
+| **Day-of-week averages** | highest day · lowest day (labeled by weekday name) |
+| **Word count over time** | mean words/entry · median words/entry |
+| **Entry gap histogram** | mean gap · median gap (in days) |
+| **Tag frequency bars** | most-used tag (mode) · mean uses/tag within the section |
+| **Tag streak** | avg streak length (across all completed streaks, not just current/longest) |
+| **Time-of-day distribution** | most common hour (mode) displayed as "usually journals at Xam/pm" |
+| **Section coverage** | mean % of sections filled per entry |
+
+Charts where stats don't add signal (co-occurrence matrix, calendar heatmap, per-tag heatmap, trend lines) show no stats row — the visual encoding is already the information.
 
 ---
 
@@ -173,6 +195,7 @@ One test per helper, using `journal._empty()` and hand-built entry fixtures with
 - Correct counts with a small fixed dataset
 - Date range filtering (entries outside range excluded)
 - Edge cases: single entry, all entries on the same day, gap of exactly 1 day
+- `describe`: correct mean/median/mode/stdev on a known dataset; `mode=None` when all values unique; `stdev=None` for single value
 
 Route tests in `tests/test_journal_app.py` (extend existing file):
 - `GET /journal/analytics` returns 200
