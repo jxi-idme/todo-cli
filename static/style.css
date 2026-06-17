@@ -1150,6 +1150,80 @@ h2 {
 .analytics-cal .cal-day { cursor: default; }
 .analytics-cal .cal-day:not(.cal-day-blank):hover { background: none; }
 
+/* ===================== custom select / date popovers ===================== */
+/* Themed replacements for the un-stylable native <select> and date popups. */
+
+.custom-select { position: relative; display: inline-block; }
+
+/* The real <select> stays in the form but is visually removed. */
+.cs-native {
+  position: absolute;
+  width: 1px; height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Trigger button mirrors the standard input/select look. */
+.cs-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-width: 120px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.cs-trigger:hover { border-color: var(--accent); }
+.custom-select.is-open .cs-trigger { border-color: var(--accent); }
+.cs-trigger .cal-caret { color: var(--muted); font-size: 0.8rem; }
+
+/* Dark popover list — same card treatment as the calendar/tag dropdowns. */
+.cs-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  min-width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.cs-option {
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+.cs-option:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.cs-option.is-selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+
+/* Analytics date-filter trigger reuses the .cs-trigger look. */
+.cs-date { position: relative; display: inline-block; }
+.cs-date .cal-popover { left: 0; right: auto; }
+
 /* Compact stats row under a chart. */
 .stats-row {
   display: flex;

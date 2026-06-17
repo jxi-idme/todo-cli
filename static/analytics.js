@@ -932,6 +932,7 @@
       fromEl.value = _from || "";
       toEl.value = _to || "";
     }
+    syncDateLabels();
     buildTabs();
     renderActivePanel();
   }
@@ -962,8 +963,107 @@
     _to = _data.date_range.max;
     document.getElementById("date-from").value = _from || "";
     document.getElementById("date-to").value = _to || "";
+    syncDateLabels();
     renderActivePanel();
   });
+
+  // ----- custom date pickers (themed calendar popover, reuses .cal-* CSS) -----
+  function syncDateLabels() {
+    document.querySelectorAll("[data-datepicker]").forEach(function (btn) {
+      var input = document.getElementById(btn.dataset.datepicker);
+      var span = btn.querySelector(".cs-value");
+      if (input && span) span.textContent = input.value || "—";
+    });
+  }
+
+  var _openCal = null;
+  function closeCal() { if (_openCal) { _openCal.remove(); _openCal = null; } }
+
+  function openCalFor(trigger, input) {
+    var pop = document.createElement("div");
+    pop.className = "cal-popover";
+    pop._owner = trigger;
+    pop.addEventListener("click", function (e) { e.stopPropagation(); });
+
+    var base = input.value ? new Date(input.value + "T00:00:00") : new Date();
+    var viewY = base.getFullYear(), viewM = base.getMonth();
+
+    function render() {
+      pop.innerHTML = "";
+      var head = document.createElement("div");
+      head.className = "cal-head";
+      var prev = document.createElement("button");
+      prev.type = "button"; prev.className = "cal-nav"; prev.textContent = "‹";
+      prev.addEventListener("click", function () {
+        viewM--; if (viewM < 0) { viewM = 11; viewY--; } render();
+      });
+      var title = document.createElement("span");
+      title.className = "cal-month-title";
+      title.textContent = CAL_MONTHS[viewM] + " " + viewY;
+      var next = document.createElement("button");
+      next.type = "button"; next.className = "cal-nav"; next.textContent = "›";
+      next.addEventListener("click", function () {
+        viewM++; if (viewM > 11) { viewM = 0; viewY++; } render();
+      });
+      head.appendChild(prev); head.appendChild(title); head.appendChild(next);
+      pop.appendChild(head);
+
+      var grid = document.createElement("div");
+      grid.className = "cal-grid";
+      CAL_DAYS.forEach(function (d) {
+        var wh = document.createElement("div");
+        wh.className = "cal-weekday"; wh.textContent = d;
+        grid.appendChild(wh);
+      });
+      var firstDow = new Date(viewY, viewM, 1).getDay();
+      for (var b = 0; b < firstDow; b++) {
+        var bl = document.createElement("div");
+        bl.className = "cal-day cal-day-blank";
+        grid.appendChild(bl);
+      }
+      var now = new Date();
+      var todayIso = calIso(now.getFullYear(), now.getMonth(), now.getDate());
+      var dim = new Date(viewY, viewM + 1, 0).getDate();
+      for (var day = 1; day <= dim; day++) {
+        (function (day) {
+          var iso = calIso(viewY, viewM, day);
+          var cell = document.createElement("div");
+          cell.className = "cal-day";
+          if (iso === todayIso) cell.classList.add("is-today");
+          if (iso === input.value) cell.classList.add("is-selected");
+          var num = document.createElement("span");
+          num.className = "cal-day-num"; num.textContent = String(day);
+          cell.appendChild(num);
+          cell.addEventListener("click", function () {
+            input.value = iso;
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+            syncDateLabels();
+            closeCal();
+          });
+          grid.appendChild(cell);
+        }(day));
+      }
+      pop.appendChild(grid);
+    }
+
+    render();
+    trigger.parentNode.appendChild(pop);
+    _openCal = pop;
+  }
+
+  document.querySelectorAll("[data-datepicker]").forEach(function (trigger) {
+    var input = document.getElementById(trigger.dataset.datepicker);
+    if (!input) return;
+    trigger.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var wasOpen = _openCal && _openCal._owner === trigger;
+      closeCal();
+      if (!wasOpen) openCalFor(trigger, input);
+    });
+  });
+  document.addEventListener("click", closeCal);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeCal(); });
+  syncDateLabels();
 
   // Live refresh: re-fetch when the tab regains focus (debounced in fetchData).
   window.addEventListener("focus", function () { fetchData(false); });

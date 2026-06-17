@@ -194,6 +194,8 @@
     // pings stop and the server auto-quits after ~30 s (AUTO_QUIT mode).
     setInterval(function () { fetch('/heartbeat', { method: 'GET' }); }, 10000);
   </script>
+  <!-- Themed dropdown: auto-enhances every native <select> on the page. -->
+  <script src="{{ url_for('static', filename='custom-select.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

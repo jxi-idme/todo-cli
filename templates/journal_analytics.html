@@ -17,8 +17,20 @@
        data-endpoint="{{ url_for('journal_analytics_data') }}">
     <div class="analytics-tabs" role="tablist"></div>
     <div class="analytics-filter">
-      <label>from <input type="date" id="date-from"></label>
-      <label>to <input type="date" id="date-to"></label>
+      <span class="filter-label">from</span>
+      <div class="cs-date">
+        <button type="button" class="cs-trigger" data-datepicker="date-from" aria-haspopup="dialog">
+          <span class="cs-value">—</span><span class="cal-caret">▾</span>
+        </button>
+        <input type="hidden" id="date-from">
+      </div>
+      <span class="filter-label">to</span>
+      <div class="cs-date">
+        <button type="button" class="cs-trigger" data-datepicker="date-to" aria-haspopup="dialog">
+          <span class="cs-value">—</span><span class="cal-caret">▾</span>
+        </button>
+        <input type="hidden" id="date-to">
+      </div>
       <button type="button" id="date-reset">reset</button>
     </div>
     <div class="analytics-panels"></div>
