@@ -601,6 +601,201 @@
     },
   });
 
+  // ===================== Numeric & Coverage charts ========================= //
+
+  function numericSeries(entries, sid) {
+    return entries
+      .filter(function (e) { return (e.numbers || {})[sid] != null; })
+      .map(function (e) { return { date: e.date, value: Number(e.numbers[sid]) }; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  }
+  function rollingAvg(values, win) {
+    return values.map(function (_, i) {
+      var s = Math.max(0, i - win + 1);
+      var slice = values.slice(s, i + 1);
+      return slice.reduce(function (a, b) { return a + b; }, 0) / slice.length;
+    });
+  }
+
+  CHARTS.push({
+    id: "numeric-line",
+    panel: "numeric",
+    title: "Numeric values over time",
+    render: function (container, entries, sections, c) {
+      var nums = U.numericSections(sections);
+      if (!nums.length) { U.empty(container, "No numeric sections."); return; }
+      var rendered = false;
+      nums.forEach(function (s) {
+        var series = numericSeries(entries, s.id);
+        if (!series.length) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name + (s.unit ? " (" + s.unit + ")" : "");
+        block.appendChild(h4);
+        var w = 600, h = 180, pad = 34;
+        var svg = U.svg(w, h);
+        var vals = series.map(function (p) { return p.value; });
+        var max = Math.max.apply(null, vals), min = Math.min.apply(null, vals);
+        var span = max - min || 1;
+        U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 4, c);
+        function ptAt(i, v) {
+          var x = series.length === 1 ? pad + (w - pad - 10) / 2
+                                      : pad + ((w - pad - 10) * i) / (series.length - 1);
+          var y = 10 + (h - pad - 10) * (1 - (v - min) / span);
+          return { x: x, y: y };
+        }
+        var pts = series.map(function (p, i) { return ptAt(i, p.value); });
+        // 7-point rolling average overlay (muted).
+        var roll = rollingAvg(vals, 7).map(function (v, i) { return ptAt(i, v); });
+        U.drawLine(svg, roll, U.colorMix(c.muted, 90), 1);
+        U.drawLine(svg, pts, s.color, 1.5);
+        pts.forEach(function (p) { U.drawDot(svg, p.x, p.y, 2, s.color); });
+        U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10,
+                   [series[0].date, series[series.length - 1].date], c);
+        U.text(svg, 0, 14, U.fmt(max), c.muted, { size: 9 });
+        U.text(svg, 0, h - pad + 2, U.fmt(min), c.muted, { size: 9 });
+        block.appendChild(svg);
+        var d = U.describe(vals);
+        U.statsRow(block, [
+          ["mean", U.fmt(d.mean)], ["median", U.fmt(d.median)],
+          ["mode", U.fmt(d.mode)], ["std dev", U.fmt(d.stdev)],
+          ["min", U.fmt(d.min)], ["max", U.fmt(d.max)],
+        ]);
+        container.appendChild(block);
+      });
+      if (!rendered) U.empty(container, "No numeric values in this range.");
+    },
+  });
+
+  CHARTS.push({
+    id: "numeric-dow",
+    panel: "numeric",
+    title: "Average by day of week",
+    render: function (container, entries, sections, c) {
+      var nums = U.numericSections(sections);
+      var names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      var rendered = false;
+      nums.forEach(function (s) {
+        var buckets = [[], [], [], [], [], [], []];
+        entries.forEach(function (e) {
+          var v = (e.numbers || {})[s.id];
+          if (v == null) return;
+          var dow = (new Date(e.date + "T00:00:00").getDay() + 6) % 7;
+          buckets[dow].push(Number(v));
+        });
+        var avgs = buckets.map(function (b) {
+          return b.length ? b.reduce(function (a, x) { return a + x; }, 0) / b.length : null;
+        });
+        if (avgs.every(function (a) { return a == null; })) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name + (s.unit ? " (" + s.unit + ")" : "");
+        block.appendChild(h4);
+        var w = 600, h = 180, pad = 30;
+        var svg = U.svg(w, h);
+        var present = avgs.filter(function (a) { return a != null; });
+        var max = Math.max.apply(null, present), min = Math.min.apply(null, present.concat(0));
+        var bw = (w - pad - 10) / 7;
+        avgs.forEach(function (a, i) {
+          if (a == null) return;
+          var bh = (h - pad - 10) * ((a - Math.min(0, min)) / ((max - Math.min(0, min)) || 1));
+          U.drawBar(svg, pad + i * bw + 3, 10 + (h - pad - 10) - bh, bw - 6, bh, s.color);
+        });
+        U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10, names, c);
+        block.appendChild(svg);
+        // highest / lowest day.
+        var ranked = names
+          .map(function (n, i) { return [n, avgs[i]]; })
+          .filter(function (p) { return p[1] != null; })
+          .sort(function (a, b) { return b[1] - a[1]; });
+        U.statsRow(block, [
+          ["highest", ranked[0][0] + " (" + U.fmt(ranked[0][1]) + ")"],
+          ["lowest", ranked[ranked.length - 1][0] + " (" + U.fmt(ranked[ranked.length - 1][1]) + ")"],
+        ]);
+        container.appendChild(block);
+      });
+      if (!rendered) U.empty(container, "No numeric values in this range.");
+    },
+  });
+
+  CHARTS.push({
+    id: "numeric-scatter",
+    panel: "numeric",
+    title: "Correlation between two numeric sections",
+    render: function (container, entries, sections, c) {
+      var nums = U.numericSections(sections);
+      if (nums.length < 2) { U.empty(container, "Need two numeric sections to correlate."); return; }
+      var sx = nums[0], sy = nums[1];
+      var pairs = entries.filter(function (e) {
+        return (e.numbers || {})[sx.id] != null && (e.numbers || {})[sy.id] != null;
+      }).map(function (e) {
+        return { x: Number(e.numbers[sx.id]), y: Number(e.numbers[sy.id]) };
+      });
+      if (!pairs.length) { U.empty(container, "No days with both values recorded."); return; }
+      var w = 600, h = 240, pad = 36;
+      var svg = U.svg(w, h);
+      var xs = pairs.map(function (p) { return p.x; }), ys = pairs.map(function (p) { return p.y; });
+      var xMin = Math.min.apply(null, xs), xMax = Math.max.apply(null, xs);
+      var yMin = Math.min.apply(null, ys), yMax = Math.max.apply(null, ys);
+      var xSpan = xMax - xMin || 1, ySpan = yMax - yMin || 1;
+      U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 4, c);
+      pairs.forEach(function (p) {
+        var x = pad + (w - pad - 10) * ((p.x - xMin) / xSpan);
+        var y = 10 + (h - pad - 10) * (1 - (p.y - yMin) / ySpan);
+        U.drawDot(svg, x, y, 3, U.colorMix(sx.color, 80));
+      });
+      U.text(svg, w / 2, h - 2, sx.name + " (x)  vs  " + sy.name + " (y)", c.muted,
+             { anchor: "middle", size: 9 });
+      container.appendChild(svg);
+      U.statsRow(container, [["points", pairs.length]]);
+    },
+  });
+
+  CHARTS.push({
+    id: "section-coverage",
+    panel: "coverage",
+    title: "Section coverage per entry",
+    render: function (container, entries, sections, c) {
+      if (!entries.length) { U.empty(container, "No entries in this range."); return; }
+      var sorted = entries.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      var cell = 14, gap = 2, labelW = 90;
+      var w = labelW + sorted.length * (cell + gap);
+      var h = sections.length * (cell + gap) + 4;
+      var svg = U.svg(w, h);
+      var coveredCounts = [];
+      sections.forEach(function (s, r) {
+        U.text(svg, labelW - 6, r * (cell + gap) + cell, s.name, c.text,
+               { anchor: "end", size: 9 });
+        sorted.forEach(function (e, col) {
+          var t = (e.tags || {})[s.id];
+          var on = (t && t.length) || (e.numbers || {})[s.id] != null;
+          svg.appendChild(U.svgEl("rect", {
+            x: labelW + col * (cell + gap), y: r * (cell + gap),
+            width: cell, height: cell, rx: 2, class: "heat-cell",
+            fill: on ? s.color : U.colorMix(c.muted, 16),
+          }));
+        });
+      });
+      sorted.forEach(function (e) {
+        var n = 0;
+        sections.forEach(function (s) {
+          var t = (e.tags || {})[s.id];
+          if ((t && t.length) || (e.numbers || {})[s.id] != null) n++;
+        });
+        coveredCounts.push(n);
+      });
+      container.appendChild(svg);
+      var pct = sections.length
+        ? U.describe(coveredCounts.map(function (n) { return (n / sections.length) * 100; })).mean
+        : null;
+      U.statsRow(container, [["mean sections filled", U.fmt(pct) + "%"]]);
+    },
+  });
+
   // ----- date filtering -----
   function filterEntries() {
     return _data.entries.filter(function (e) {
