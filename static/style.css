@@ -1202,6 +1202,8 @@ h2 {
   gap: 1px;
   white-space: nowrap;
 }
+/* display:flex above overrides the bare [hidden] UA rule, so hide explicitly. */
+.cs-popover[hidden] { display: none; }
 
 .cs-option {
   text-align: left;
