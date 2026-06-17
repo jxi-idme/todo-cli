@@ -130,17 +130,48 @@
         }
         pop.appendChild(grid);
 
-        // Time row: HH : MM (24h), plus a clear button.
+        // Time row: HH : MM (24h) with themed steppers, plus a clear button.
         var timeRow = document.createElement("div");
         timeRow.className = "dt-time-row";
-        var hInput = document.createElement("input");
-        hInput.type = "number"; hInput.min = 0; hInput.max = 23;
-        hInput.className = "dt-time"; hInput.value = pad(h);
-        var colon = document.createElement("span");
-        colon.className = "dt-colon"; colon.textContent = ":";
-        var mInput = document.createElement("input");
-        mInput.type = "number"; mInput.min = 0; mInput.max = 59;
-        mInput.className = "dt-time"; mInput.value = pad(min);
+
+        function onTime() {
+          h = readH(); min = readMin();
+          if (selDate) commit(selDate, h, min);
+        }
+
+        // A number field with custom ▲/▼ steppers (native spinners are hidden
+        // via CSS). Values wrap around their max for quick HH/MM entry.
+        function timeField(initial, max) {
+          var fwrap = document.createElement("div");
+          fwrap.className = "dt-time-wrap";
+          var input = document.createElement("input");
+          input.type = "number"; input.min = 0; input.max = max;
+          input.className = "dt-time"; input.value = pad(initial);
+          var steps = document.createElement("div");
+          steps.className = "dt-step";
+          var up = document.createElement("button");
+          up.type = "button"; up.className = "dt-step-btn"; up.textContent = "▲";
+          var down = document.createElement("button");
+          down.type = "button"; down.className = "dt-step-btn"; down.textContent = "▼";
+          function set(n) {
+            if (n < 0) n = max;
+            if (n > max) n = 0;
+            input.value = pad(n);
+            onTime();
+          }
+          up.addEventListener("click", function (e) {
+            e.stopPropagation(); set((parseInt(input.value, 10) || 0) + 1);
+          });
+          down.addEventListener("click", function (e) {
+            e.stopPropagation(); set((parseInt(input.value, 10) || 0) - 1);
+          });
+          steps.appendChild(up); steps.appendChild(down);
+          fwrap.appendChild(input); fwrap.appendChild(steps);
+          return { el: fwrap, input: input };
+        }
+
+        var hField = timeField(h, 23), mField = timeField(min, 59);
+        var hInput = hField.input, mInput = mField.input;
 
         function readH() {
           var n = parseInt(hInput.value, 10);
@@ -150,18 +181,16 @@
           var n = parseInt(mInput.value, 10);
           return isNaN(n) ? 0 : Math.max(0, Math.min(59, n));
         }
-        function onTime() {
-          h = readH(); min = readMin();
-          if (selDate) commit(selDate, h, min);
-        }
         hInput.addEventListener("change", onTime);
         mInput.addEventListener("change", onTime);
         // expose for the day-cell handlers above
         render.readH = readH; render.readMin = readMin;
 
-        timeRow.appendChild(hInput);
+        var colon = document.createElement("span");
+        colon.className = "dt-colon"; colon.textContent = ":";
+        timeRow.appendChild(hField.el);
         timeRow.appendChild(colon);
-        timeRow.appendChild(mInput);
+        timeRow.appendChild(mField.el);
 
         var clear = document.createElement("button");
         clear.type = "button"; clear.className = "dt-clear"; clear.textContent = "clear";

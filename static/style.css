@@ -1238,8 +1238,40 @@ h2 {
   padding-top: 0.6rem;
   border-top: 1px solid var(--border);
 }
-.dt-time { width: 56px; text-align: center; }
+.dt-time { width: 44px; text-align: center; }
 .dt-colon { color: var(--muted); }
+
+/* Hide native number spinners (light, clash with dark theme) app-wide. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Custom themed ▲/▼ steppers for the time fields. */
+.dt-time-wrap { display: inline-flex; align-items: stretch; }
+.dt-time-wrap .dt-time {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+.dt-step { display: flex; flex-direction: column; }
+.dt-step-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 0.35rem;
+  font-size: 0.55rem;
+  line-height: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.dt-step-btn:first-child { border-top-right-radius: 4px; border-bottom: none; }
+.dt-step-btn:last-child { border-bottom-right-radius: 4px; }
+.dt-step-btn:hover { color: var(--accent); border-color: var(--accent); }
 .dt-clear {
   margin-left: auto;
   background: none;
