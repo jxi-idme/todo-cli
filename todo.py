@@ -42,6 +42,31 @@ _TAG_NAME_RE = re.compile(r"^[a-z0-9 _-]+$")
 _FIXED_RECURRENCES = {"daily", "weekly", "monthly"}
 
 
+# Allowed task difficulty ratings (set at completion, editable on Archive).
+_DIFFICULTIES = {"easy", "medium", "hard"}
+
+
+def _norm_difficulty(value):
+    """Normalize a difficulty to one of _DIFFICULTIES, or None if invalid/empty."""
+    v = (value or "").strip().lower()
+    return v if v in _DIFFICULTIES else None
+
+
+def set_difficulty(data, task_id, difficulty):
+    """Set or clear a task's difficulty (searches all buckets). A valid value
+    (easy/medium/hard) sets it; anything else clears it. Unknown id = no-op."""
+    norm = _norm_difficulty(difficulty)
+    for bucket in ("archive", "active", "expired"):
+        for t in data.get(bucket, []):
+            if t.get("id") == task_id:
+                if norm:
+                    t["difficulty"] = norm
+                else:
+                    t.pop("difficulty", None)
+                return data
+    return data
+
+
 def _valid_recurrence(recurrence):
     """True if `recurrence` is a recognized recurrence value (or None)."""
     if recurrence is None:
@@ -509,7 +534,7 @@ def _spawn_next(task, due_iso, now):
     }
 
 
-def refresh(data, completed_ids, now=None):
+def refresh(data, completed_ids, difficulties=None, now=None):
     """Process the active list:
 
     - Checked (completed) tasks -> archived (stamped `completed`). A completed
@@ -524,6 +549,7 @@ def refresh(data, completed_ids, now=None):
     """
     now = now or datetime.now()
     completed = set(completed_ids or [])
+    difficulties = difficulties or {}
     # Backward compatibility: a store loaded the old way may lack "expired".
     data.setdefault("expired", [])
 
@@ -535,6 +561,9 @@ def refresh(data, completed_ids, now=None):
             # Completed: archive it, stamping when.
             archived = dict(task)
             archived["completed"] = now.isoformat()
+            diff = _norm_difficulty(difficulties.get(task["id"]))
+            if diff:
+                archived["difficulty"] = diff
             data["archive"].append(archived)
             # Recurring? Spawn the next occurrence too.
             if recurrence and task.get("due"):

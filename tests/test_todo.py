@@ -883,3 +883,57 @@ def test_load_tags_wrong_type_migrates(tmp_path):
     loaded = todo.load(str(path))
     assert loaded["tags"] == {}
     assert not (tmp_path / "tasks.json.bak").exists()
+
+
+# --------------------------------------------------------------------------- #
+# Difficulty
+# --------------------------------------------------------------------------- #
+
+def test_norm_difficulty():
+    assert todo._norm_difficulty(" Hard ") == "hard"
+    assert todo._norm_difficulty("MEDIUM") == "medium"
+    assert todo._norm_difficulty("bogus") is None
+    assert todo._norm_difficulty("") is None
+    assert todo._norm_difficulty(None) is None
+
+
+def test_refresh_stamps_difficulty_on_completed():
+    data = todo._empty()
+    todo.add_task(data, "rate me", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.refresh(data, [tid], difficulties={tid: "hard"}, now=NOW)
+    assert data["active"] == []
+    assert data["archive"][0]["difficulty"] == "hard"
+
+
+def test_refresh_ignores_invalid_difficulty_and_missing():
+    data = todo._empty()
+    todo.add_task(data, "a", now=NOW)
+    todo.add_task(data, "b", now=NOW)
+    a, b = data["active"][0]["id"], data["active"][1]["id"]
+    todo.refresh(data, [a, b], difficulties={a: "nope"}, now=NOW)  # b has none
+    arch = {t["title"]: t for t in data["archive"]}
+    assert "difficulty" not in arch["a"]      # invalid -> unrated
+    assert "difficulty" not in arch["b"]      # not provided -> unrated
+
+
+def test_refresh_difficulty_not_carried_to_spawned_recurrence():
+    data = todo._empty()
+    due = NOW.isoformat()
+    todo.add_task(data, "daily", due=due, recurrence="daily", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.refresh(data, [tid], difficulties={tid: "easy"}, now=NOW)
+    assert data["archive"][0]["difficulty"] == "easy"
+    assert "difficulty" not in data["active"][0]   # fresh occurrence is unrated
+
+
+def test_set_difficulty_sets_and_clears():
+    data = todo._empty()
+    todo.add_task(data, "x", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.refresh(data, [tid], now=NOW)            # archive it (unrated)
+    todo.set_difficulty(data, tid, "medium")
+    assert data["archive"][0]["difficulty"] == "medium"
+    todo.set_difficulty(data, tid, "")            # clear
+    assert "difficulty" not in data["archive"][0]
+    todo.set_difficulty(data, "ghost", "hard")    # unknown id = no-op (no raise)
