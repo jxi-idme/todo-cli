@@ -1251,21 +1251,22 @@ input[type="number"]::-webkit-inner-spin-button {
 /* Custom themed ▲/▼ steppers for the time fields. Input and stepper share an
    explicit height so the arrow pair lines up centered against the number, and
    the stepper sits flush against the input (shared border edge). */
-.dt-time-wrap { display: inline-flex; align-items: stretch; height: 34px; }
+.dt-time-wrap { display: inline-flex; align-items: stretch; }
 .dt-time-wrap .dt-time {
   width: 42px;
-  height: 34px;
-  padding: 0 0.3rem;
+  padding: 0.3rem;
   text-align: center;
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border-right: none;
 }
+/* align-self:stretch makes the stepper exactly the input's height, so the two
+   halves split that height evenly and the arrows land on the vertical center. */
 .dt-step {
   display: flex;
   flex-direction: column;
+  align-self: stretch;
   width: 20px;
-  height: 34px;
   border: 1px solid var(--border);
   border-left: none;
   border-top-right-radius: 4px;
@@ -1273,7 +1274,7 @@ input[type="number"]::-webkit-inner-spin-button {
   overflow: hidden;
 }
 .dt-step-btn {
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   justify-content: center;
