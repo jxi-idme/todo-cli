@@ -345,6 +345,31 @@ def next_occurrence(due_iso, recurrence):
     return None
 
 
+def _default_due(recurrence, now):
+    """Default due datetime (ISO) for a recurring task created/edited without an
+    explicit due date: one interval out from `now`, at 23:59 local.
+
+    daily   -> same day
+    weekly  -> +7 days
+    monthly -> +1 calendar month (day clamped to month end)
+    every:N -> +N days
+
+    Returns None for a non-repeating/unrecognized recurrence. Assumes
+    `recurrence` has already passed `_valid_recurrence`.
+    """
+    if recurrence == "daily":
+        target = now
+    elif recurrence == "weekly":
+        target = now + timedelta(days=7)
+    elif recurrence == "monthly":
+        target = _add_one_month(now)
+    elif isinstance(recurrence, str) and recurrence.startswith("every:"):
+        target = now + timedelta(days=int(recurrence.split(":", 1)[1]))
+    else:
+        return None
+    return target.replace(hour=23, minute=59, second=0, microsecond=0).isoformat()
+
+
 def _advance_until_future(due_iso, recurrence, now):
     """Advance a recurring due date by its interval until it lands strictly
     after `now`. Returns the first future due ISO string.
@@ -375,8 +400,9 @@ def add_task(data, title, due=None, recurrence=None, now=None, tags=None):
     string that doesn't parse as an ISO date, or on an unrecognized
     `recurrence`.
 
-    Recurrence requires a due date (a repeating task with no due date makes
-    no sense). If a recurrence is given without a due date we raise ValueError.
+    A recurrence given without a due date defaults the due date to one interval
+    out from `now` at 23:59 local (daily -> same day, weekly -> +7d,
+    monthly -> +1 month, every:N -> +N days). An explicit due is always kept.
 
     `tags` is an optional list of tag names. They're normalized (stripped,
     lowercased, blanks dropped, de-duplicated preserving order) and stored on
@@ -389,9 +415,9 @@ def add_task(data, title, due=None, recurrence=None, now=None, tags=None):
         raise ValueError(f"Invalid due date: {due!r}")
     if not _valid_recurrence(recurrence):
         raise ValueError(f"Invalid recurrence: {recurrence!r}")
-    if recurrence and not due:
-        raise ValueError("A recurring task must have a due date")
     now = now or datetime.now()
+    if recurrence and not due:
+        due = _default_due(recurrence, now)
     task = {
         "id": uuid.uuid4().hex,
         "title": title,
@@ -404,11 +430,12 @@ def add_task(data, title, due=None, recurrence=None, now=None, tags=None):
     return data
 
 
-def edit_task(data, task_id, title, due=None, recurrence=None, tags=None):
+def edit_task(data, task_id, title, due=None, recurrence=None, tags=None, now=None):
     """Update an existing active task in place.
 
     Applies the same validation rules as add_task (non-empty title,
-    parseable due, valid recurrence, recurrence requires a due date).
+    parseable due, valid recurrence). As in add_task, a recurrence given
+    without a due date defaults the due to one interval out at 23:59 local.
     `tags` is normalized the same way as in add_task. Raises ValueError on
     bad input. An unknown id is a safe no-op.
     """
@@ -420,7 +447,7 @@ def edit_task(data, task_id, title, due=None, recurrence=None, tags=None):
     if not _valid_recurrence(recurrence):
         raise ValueError(f"Invalid recurrence: {recurrence!r}")
     if recurrence and not due:
-        raise ValueError("A recurring task must have a due date")
+        due = _default_due(recurrence, now or datetime.now())
 
     for task in data["active"]:
         if task["id"] == task_id:

@@ -145,14 +145,17 @@ def test_post_add_custom_recurrence(client):
     assert data["active"][0]["recurrence"] == "every:3"
 
 
-def test_post_add_recurrence_without_due_not_added(client):
+def test_post_add_recurrence_without_due_defaults(client):
     resp = client.post("/add", data={
         "title": "No due recurring",
         "recurrence": "daily",
     })
-    assert resp.status_code == 302   # graceful redirect
+    assert resp.status_code == 302
     data = todo.load(_data_path(client))
-    assert data["active"] == []      # rejected, nothing added
+    assert len(data["active"]) == 1          # added with a defaulted due date
+    t = data["active"][0]
+    assert t["recurrence"] == "daily"
+    assert t["due"] and t["due"].endswith("T23:59:00")
 
 
 # --------------------------------------------------------------------------- #
