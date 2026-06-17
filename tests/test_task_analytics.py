@@ -1,0 +1,56 @@
+"""Unit tests for the pure task-analytics helpers in todo.py."""
+import todo
+
+
+def _arch(title, completed, due=None, recurrence=None, tags=None, difficulty=None):
+    t = {"id": title, "title": title, "completed": completed, "due": due,
+         "recurrence": recurrence, "tags": tags or []}
+    if difficulty:
+        t["difficulty"] = difficulty
+    return t
+
+
+def test_completion_throughput_counts_by_day_in_range():
+    arch = [_arch("a", "2026-06-15T09:00:00"),
+            _arch("b", "2026-06-15T18:00:00"),
+            _arch("c", "2026-06-16T08:00:00")]
+    assert todo.completion_throughput(arch) == {"2026-06-15": 2, "2026-06-16": 1}
+    assert todo.completion_throughput(arch, start="2026-06-16") == {"2026-06-16": 1}
+    assert todo.completion_throughput(arch, end="2026-06-15") == {"2026-06-15": 2}
+
+
+def test_completed_late_count():
+    arch = [_arch("late", "2026-06-16T10:00:00", due="2026-06-15T10:00:00"),
+            _arch("ontime", "2026-06-15T08:00:00", due="2026-06-15T10:00:00"),
+            _arch("nodue", "2026-06-15T08:00:00")]            # no due -> ignored
+    assert todo.completed_late_count(arch) == {"late": 1, "on_time": 1}
+
+
+def test_expiry_counts():
+    exp = [{"expired_at": "2026-06-15T00:00:00"},
+           {"expired_at": "2026-06-15T00:00:00"},
+           {"expired_at": "2026-06-17T00:00:00"}]
+    assert todo.expiry_counts(exp) == {"2026-06-15": 2, "2026-06-17": 1}
+
+
+def test_recurring_adherence_completed_vs_missed():
+    arch = [_arch("r1", "2026-06-15T09:00:00", recurrence="daily"),
+            _arch("once", "2026-06-15T09:00:00")]              # non-recurring ignored
+    exp = [{"expired_at": "2026-06-14T00:00:00", "recurrence": "daily"},
+           {"expired_at": "2026-06-13T00:00:00"}]              # non-recurring ignored
+    assert todo.recurring_adherence(arch, exp) == {"completed": 1, "missed": 1}
+
+
+def test_difficulty_breakdown():
+    arch = [_arch("a", "2026-06-15T09:00:00", difficulty="hard"),
+            _arch("b", "2026-06-15T09:00:00", difficulty="easy"),
+            _arch("c", "2026-06-15T09:00:00")]                 # unrated
+    assert todo.difficulty_breakdown(arch) == {
+        "easy": 1, "medium": 0, "hard": 1, "unrated": 1}
+
+
+def test_task_tag_frequency():
+    arch = [_arch("a", "2026-06-15T09:00:00", tags=["work", "home"]),
+            _arch("b", "2026-06-16T09:00:00", tags=["work"])]
+    assert todo.task_tag_frequency(arch) == {"work": 2, "home": 1}
+    assert todo.task_tag_frequency(arch, start="2026-06-16") == {"work": 1}

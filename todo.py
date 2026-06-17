@@ -590,3 +590,90 @@ def refresh(data, completed_ids, difficulties=None, now=None):
 
     data["active"] = sort_active(still_active, now=now)
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Task analytics (pure aggregation; dates are YYYY-MM-DD; bounds inclusive)
+# --------------------------------------------------------------------------- #
+
+def _in_range(date10, start, end):
+    if not date10:
+        return False
+    if start and date10 < start:
+        return False
+    if end and date10 > end:
+        return False
+    return True
+
+
+def completion_throughput(archive, start=None, end=None):
+    """{date: count} of tasks completed per day within [start, end]."""
+    out = {}
+    for t in archive:
+        c = t.get("completed")
+        d = c[:10] if c else None
+        if _in_range(d, start, end):
+            out[d] = out.get(d, 0) + 1
+    return out
+
+
+def completed_late_count(archive, start=None, end=None):
+    """Among completed tasks that had a due date, count late vs on-time."""
+    late = on_time = 0
+    for t in archive:
+        c, due = t.get("completed"), t.get("due")
+        if not c or not due:
+            continue
+        if not _in_range(c[:10], start, end):
+            continue
+        if c > due:
+            late += 1
+        else:
+            on_time += 1
+    return {"late": late, "on_time": on_time}
+
+
+def expiry_counts(expired, start=None, end=None):
+    """{date: count} of tasks that expired (missed) per day."""
+    out = {}
+    for t in expired:
+        e = t.get("expired_at")
+        d = e[:10] if e else None
+        if _in_range(d, start, end):
+            out[d] = out.get(d, 0) + 1
+    return out
+
+
+def recurring_adherence(archive, expired, start=None, end=None):
+    """For recurring occurrences only: completed (archived) vs missed (expired)."""
+    completed = sum(
+        1 for t in archive
+        if t.get("recurrence") and _in_range((t.get("completed") or "")[:10], start, end))
+    missed = sum(
+        1 for t in expired
+        if t.get("recurrence") and _in_range((t.get("expired_at") or "")[:10], start, end))
+    return {"completed": completed, "missed": missed}
+
+
+def difficulty_breakdown(archive, start=None, end=None):
+    """Counts of easy/medium/hard/unrated among completed tasks in range."""
+    out = {"easy": 0, "medium": 0, "hard": 0, "unrated": 0}
+    for t in archive:
+        c = t.get("completed")
+        if not _in_range(c[:10] if c else None, start, end):
+            continue
+        out[_norm_difficulty(t.get("difficulty")) or "unrated"] += 1
+    return out
+
+
+def task_tag_frequency(tasks, start=None, end=None, date_field="completed"):
+    """{tag: count} across `tasks`; if a bound is given, filter by `date_field`."""
+    out = {}
+    for t in tasks:
+        if start or end:
+            v = t.get(date_field)
+            if not _in_range(v[:10] if v else None, start, end):
+                continue
+        for tag in t.get("tags") or []:
+            out[tag] = out.get(tag, 0) + 1
+    return out
