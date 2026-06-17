@@ -1137,6 +1137,9 @@ h2 {
 
 /* SVG charts fill the card width; height is set per chart. */
 .chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* Grid/heatmap charts render at natural pixel size (small cells) and only
+   shrink if they would overflow the panel — never stretched up to fill it. */
+.chart-svg-fixed { display: block; max-width: 100%; height: auto; overflow: visible; }
 
 /* Compact stats row under a chart. */
 .stats-row {

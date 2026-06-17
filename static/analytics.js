@@ -64,6 +64,20 @@
       return s;
     },
 
+    // Like svg(), but renders at its natural pixel size (small) and only
+    // shrinks if it would overflow the panel. Use for grid/heatmap charts so
+    // a few columns stay small instead of being stretched to full width.
+    svgFixed: function (width, height) {
+      var s = U.svgEl("svg", {
+        viewBox: "0 0 " + width + " " + height,
+        width: width, height: height,
+        class: "chart-svg-fixed",
+        preserveAspectRatio: "xMinYMin meet",
+      });
+      s.dataset.w = width; s.dataset.h = height;
+      return s;
+    },
+
     text: function (svg, x, y, str, fill, opts) {
       opts = opts || {};
       var t = U.svgEl("text", {
@@ -261,11 +275,11 @@
       // Snap start back to Monday.
       var startDow = (start.getDay() + 6) % 7;  // 0=Mon
       start.setDate(start.getDate() - startDow);
-      var cell = 13, gap = 2, rows = 7;
+      var cell = 14, gap = 3, rows = 7, labelW = 34;
       var totalDays = Math.round((end - start) / 86400000) + 1;
       var cols = Math.ceil(totalDays / 7) + 1;
-      var w = cols * (cell + gap) + 30, h = rows * (cell + gap) + 20;
-      var svg = U.svg(w, h);
+      var w = labelW + cols * (cell + gap), h = rows * (cell + gap);
+      var svg = U.svgFixed(w, h);
       var d = new Date(start);
       var col = 0;
       while (d <= end) {
@@ -275,7 +289,7 @@
           String(d.getDate()).padStart(2, "0");
         var on = !!present[iso];
         svg.appendChild(U.svgEl("rect", {
-          x: 30 + col * (cell + gap),
+          x: labelW + col * (cell + gap),
           y: dow * (cell + gap),
           width: cell, height: cell, rx: 2,
           class: "heat-cell",
@@ -285,7 +299,8 @@
         d.setDate(d.getDate() + 1);
       }
       ["Mon", "", "Wed", "", "Fri", "", "Sun"].forEach(function (lbl, i) {
-        if (lbl) U.text(svg, 0, i * (cell + gap) + cell, lbl, c.muted, { size: 9 });
+        if (lbl) U.text(svg, labelW - 6, i * (cell + gap) + cell - 2, lbl, c.muted,
+                        { anchor: "end", size: 10 });
       });
       container.appendChild(svg);
       U.statsRow(container, [["days with an entry", dates.length]]);
@@ -518,13 +533,13 @@
         // rows = tags, cols = dates; cell filled (section color) if tag present that day.
         var byDate = {};
         entries.forEach(function (e) { byDate[e.date] = tagsForSectionEntry(e, s.id); });
-        var cell = 12, gap = 2, labelW = 90;
+        var cell = 14, gap = 3, labelW = 90;
         var w = labelW + dates.length * (cell + gap);
-        var h = tags.length * (cell + gap) + 4;
-        var svg = U.svg(w, h);
+        var h = tags.length * (cell + gap);
+        var svg = U.svgFixed(w, h);
         tags.forEach(function (t, r) {
-          U.text(svg, labelW - 6, r * (cell + gap) + cell, t, c.text,
-                 { anchor: "end", size: 9 });
+          U.text(svg, labelW - 6, r * (cell + gap) + cell - 2, t, c.text,
+                 { anchor: "end", size: 10 });
           dates.forEach(function (d, col) {
             var on = (byDate[d] || []).indexOf(t) !== -1;
             svg.appendChild(U.svgEl("rect", {
@@ -766,14 +781,14 @@
     render: function (container, entries, sections, c) {
       if (!entries.length) { U.empty(container, "No entries in this range."); return; }
       var sorted = entries.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-      var cell = 14, gap = 2, labelW = 90;
+      var cell = 14, gap = 3, labelW = 90;
       var w = labelW + sorted.length * (cell + gap);
-      var h = sections.length * (cell + gap) + 4;
-      var svg = U.svg(w, h);
+      var h = sections.length * (cell + gap);
+      var svg = U.svgFixed(w, h);
       var coveredCounts = [];
       sections.forEach(function (s, r) {
-        U.text(svg, labelW - 6, r * (cell + gap) + cell, s.name, c.text,
-               { anchor: "end", size: 9 });
+        U.text(svg, labelW - 6, r * (cell + gap) + cell - 2, s.name, c.text,
+               { anchor: "end", size: 10 });
         sorted.forEach(function (e, col) {
           var t = (e.tags || {})[s.id];
           var on = (t && t.length) || (e.numbers || {})[s.id] != null;
