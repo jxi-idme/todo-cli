@@ -385,6 +385,222 @@
     },
   });
 
+  // ===================== Tag charts (one block per tag section) ============ //
+
+  function tagsForSectionEntry(e, sid) {
+    return ((e.tags || {})[sid]) || [];
+  }
+  function sectionTagFreq(entries, sid) {
+    var freq = {};
+    entries.forEach(function (e) {
+      tagsForSectionEntry(e, sid).forEach(function (t) { freq[t] = (freq[t] || 0) + 1; });
+    });
+    return freq;
+  }
+
+  CHARTS.push({
+    id: "tag-frequency",
+    panel: "tags",
+    title: "Tag frequency",
+    render: function (container, entries, sections, c) {
+      var tagSecs = U.tagSections(sections);
+      if (!tagSecs.length) { U.empty(container, "No tag sections."); return; }
+      var rendered = false;
+      tagSecs.forEach(function (s) {
+        var freq = sectionTagFreq(entries, s.id);
+        var keys = Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a]; });
+        if (!keys.length) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name;
+        block.appendChild(h4);
+        var rowH = 18, w = 600, pad = 90;
+        var svg = U.svg(w, keys.length * rowH + 6);
+        var max = Math.max.apply(null, keys.map(function (k) { return freq[k]; }));
+        keys.forEach(function (k, i) {
+          var y = i * rowH + 2;
+          U.text(svg, pad - 6, y + 12, k, c.text, { anchor: "end", size: 10 });
+          var bw = (w - pad - 30) * (freq[k] / max);
+          U.drawBar(svg, pad, y + 3, bw, 11, s.color);
+          U.text(svg, pad + bw + 4, y + 12, freq[k], c.muted, { size: 9 });
+        });
+        block.appendChild(svg);
+        // mode (most-used tag) + mean uses/tag.
+        var d = U.describe(keys.map(function (k) { return freq[k]; }));
+        U.statsRow(block, [["most-used", keys[0]],
+                           ["mean uses/tag", U.fmt(d.mean)]]);
+        container.appendChild(block);
+      });
+      if (!rendered) U.empty(container, "No tags recorded in this range.");
+    },
+  });
+
+  CHARTS.push({
+    id: "tag-trend",
+    panel: "tags",
+    title: "Top-tag trend (per ISO week)",
+    render: function (container, entries, sections, c) {
+      var tagSecs = U.tagSections(sections);
+      var rendered = false;
+      tagSecs.forEach(function (s) {
+        var freq = sectionTagFreq(entries, s.id);
+        var keys = Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a]; });
+        if (!keys.length) return;
+        var tag = keys[0];  // chart the section's most-used tag
+        // Weekly counts.
+        var weeks = {};
+        entries.forEach(function (e) {
+          if (tagsForSectionEntry(e, s.id).indexOf(tag) === -1) return;
+          var d = new Date(e.date + "T00:00:00");
+          var wk = isoWeekKey(d);
+          weeks[wk] = (weeks[wk] || 0) + 1;
+        });
+        var wk = Object.keys(weeks).sort();
+        if (wk.length < 2) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name + " — “" + tag + "”";
+        block.appendChild(h4);
+        var w = 600, h = 160, pad = 30;
+        var svg = U.svg(w, h);
+        var max = Math.max.apply(null, wk.map(function (k) { return weeks[k]; }));
+        U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 3, c);
+        var pts = wk.map(function (k, i) {
+          var x = pad + ((w - pad - 10) * i) / (wk.length - 1);
+          var y = 10 + (h - pad - 10) * (1 - weeks[k] / max);
+          return { x: x, y: y };
+        });
+        U.drawLine(svg, pts, s.color, 1.5);
+        pts.forEach(function (p) { U.drawDot(svg, p.x, p.y, 2, s.color); });
+        U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10,
+                   [wk[0], wk[wk.length - 1]], c);
+        block.appendChild(svg);
+        container.appendChild(block);
+      });
+      if (!rendered) U.empty(container, "Not enough data for a weekly trend yet.");
+    },
+  });
+
+  function isoWeekKey(date) {
+    // ISO-8601 week number, matching Python's isocalendar().
+    var d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    var dayNum = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - dayNum + 3);
+    var firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    var week = 1 + Math.round(
+      ((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+    return d.getUTCFullYear() + "-W" + (week < 10 ? "0" + week : week);
+  }
+
+  CHARTS.push({
+    id: "tag-heatmap",
+    panel: "tags",
+    title: "Per-tag activity",
+    render: function (container, entries, sections, c) {
+      var tagSecs = U.tagSections(sections);
+      var dates = uniqueDates(entries);
+      if (!dates.length) { U.empty(container, "No entries in this range."); return; }
+      var rendered = false;
+      tagSecs.forEach(function (s) {
+        var freq = sectionTagFreq(entries, s.id);
+        var tags = Object.keys(freq).sort();
+        if (!tags.length) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name;
+        block.appendChild(h4);
+        // rows = tags, cols = dates; cell filled (section color) if tag present that day.
+        var byDate = {};
+        entries.forEach(function (e) { byDate[e.date] = tagsForSectionEntry(e, s.id); });
+        var cell = 12, gap = 2, labelW = 90;
+        var w = labelW + dates.length * (cell + gap);
+        var h = tags.length * (cell + gap) + 4;
+        var svg = U.svg(w, h);
+        tags.forEach(function (t, r) {
+          U.text(svg, labelW - 6, r * (cell + gap) + cell, t, c.text,
+                 { anchor: "end", size: 9 });
+          dates.forEach(function (d, col) {
+            var on = (byDate[d] || []).indexOf(t) !== -1;
+            svg.appendChild(U.svgEl("rect", {
+              x: labelW + col * (cell + gap), y: r * (cell + gap),
+              width: cell, height: cell, rx: 2, class: "heat-cell",
+              fill: on ? s.color : U.colorMix(c.muted, 16),
+            }));
+          });
+        });
+        block.appendChild(svg);
+        container.appendChild(block);
+      });
+      if (!rendered) U.empty(container, "No tags recorded in this range.");
+    },
+  });
+
+  CHARTS.push({
+    id: "tag-cooccurrence",
+    panel: "tags",
+    title: "Tag co-occurrence",
+    render: function (container, entries, sections, c) {
+      var tagSecs = U.tagSections(sections);
+      var rendered = false;
+      tagSecs.forEach(function (s) {
+        // Build co-occurrence within this section.
+        var co = {};
+        var tagSet = {};
+        entries.forEach(function (e) {
+          var tags = Array.from(new Set(tagsForSectionEntry(e, s.id))).sort();
+          tags.forEach(function (a) {
+            tagSet[a] = true;
+            tags.forEach(function (b) {
+              if (a === b) return;
+              co[a] = co[a] || {};
+              co[a][b] = (co[a][b] || 0) + 1;
+            });
+          });
+        });
+        var tags = Object.keys(tagSet).sort();
+        if (tags.length < 2) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name;
+        block.appendChild(h4);
+        var table = document.createElement("table");
+        table.className = "matrix-table";
+        var thead = document.createElement("tr");
+        thead.appendChild(document.createElement("th"));
+        tags.forEach(function (t) {
+          var th = document.createElement("th"); th.textContent = t; thead.appendChild(th);
+        });
+        table.appendChild(thead);
+        tags.forEach(function (a) {
+          var tr = document.createElement("tr");
+          var rh = document.createElement("th"); rh.textContent = a; tr.appendChild(rh);
+          tags.forEach(function (b) {
+            var td = document.createElement("td");
+            if (a === b) { td.textContent = "·"; td.style.color = c.muted; }
+            else {
+              var n = (co[a] && co[a][b]) || 0;
+              td.textContent = n || "";
+              if (n) td.style.background = U.colorMix(s.color, Math.min(80, 20 + n * 20));
+            }
+            tr.appendChild(td);
+          });
+          table.appendChild(tr);
+        });
+        block.appendChild(table);
+        container.appendChild(block);
+      });
+      if (!rendered) U.empty(container, "Need a section with 2+ co-occurring tags.");
+    },
+  });
+
   // ----- date filtering -----
   function filterEntries() {
     return _data.entries.filter(function (e) {
