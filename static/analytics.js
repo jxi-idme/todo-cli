@@ -58,7 +58,7 @@
     return {
       bg: v("--bg"), panel: v("--panel"), text: v("--text"),
       muted: v("--muted"), border: v("--border"),
-      accent: v("--accent"), danger: v("--danger"),
+      accent: v("--accent"), accentDim: v("--accent-dim"), danger: v("--danger"),
     };
   }
 
@@ -1107,7 +1107,7 @@
       var legend = U.svg(600, 22);
       U.drawDot(legend, 8, 11, 4, c.accent);
       U.text(legend, 18, 14, "journal entry", c.muted, { size: 9 });
-      U.drawDot(legend, 120, 11, 4, U.colorMix(c.accent, 45));
+      U.drawDot(legend, 120, 11, 4, c.accentDim);
       U.text(legend, 130, 14, "task completed", c.muted, { size: 9 });
       container.appendChild(legend);
       U.statsRow(container, [["entry days", entryDates.length],

@@ -214,6 +214,7 @@ button:hover {
 .task {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.6rem;
   padding: 0.55rem 0;
   border-bottom: 1px solid var(--border);
@@ -1308,9 +1309,18 @@ input[type="number"]::-webkit-inner-spin-button {
 .difficulty-picker {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
   margin-left: 0.5rem;
   font-size: 0.78rem;
+}
+/* Subtle reveal once the task is checked (the [hidden] attr is removed in JS). */
+.difficulty-picker:not([hidden]) {
+  animation: difficulty-reveal 0.15s ease-out;
+}
+@keyframes difficulty-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .difficulty-prompt { color: var(--muted); }
 .kind-toggle-opt {
