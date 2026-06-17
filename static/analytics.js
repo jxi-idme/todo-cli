@@ -14,7 +14,6 @@
   var _data = { sections: [], entries: [], date_range: { min: null, max: null } };
   var _from = null, _to = null;
   var _activeTab = "overview";
-  var _rendered = {};       // panel id -> true once rendered for current data
   var _lastFetch = 0;
 
   // Panel definitions. `needs` optionally gates a tab's visibility.
