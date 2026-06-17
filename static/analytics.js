@@ -23,6 +23,7 @@
     { id: "tags", label: "Tags" },
     { id: "numeric", label: "Numeric", needs: hasNumeric },
     { id: "coverage", label: "Coverage" },
+    { id: "tasks", label: "Tasks", needs: hasTasks },
   ];
 
   // Filled by the chart sections (Tasks 11-13).
@@ -31,6 +32,23 @@
 
   function hasNumeric() {
     return _data.sections.some(function (s) { return s.type === "numeric"; });
+  }
+
+  function hasTasks() {
+    var t = _data.tasks;
+    return !!t && (t.active.length || t.archive.length || t.expired.length);
+  }
+
+  // Tasks completed within the active date range, by completed-day.
+  function taskThroughput() {
+    var out = {};
+    (_data.tasks ? _data.tasks.archive : []).forEach(function (t) {
+      if (!t.completed) return;
+      var d = t.completed.slice(0, 10);
+      if ((_from && d < _from) || (_to && d > _to)) return;
+      out[d] = (out[d] || 0) + 1;
+    });
+    return out;
   }
 
   // ----- color resolution (live, from CSS vars) -----
@@ -850,6 +868,134 @@
         ? U.describe(coveredCounts.map(function (n) { return (n / sections.length) * 100; })).mean
         : null;
       U.statsRow(container, [["mean sections filled", pct != null ? U.fmt(pct) + "%" : null]]);
+    },
+  });
+
+  // ===================== Tasks charts ===================================== //
+
+  // --- Tasks: completion throughput ---
+  CHARTS.push({
+    id: "task-throughput", panel: "tasks", title: "Tasks completed per day",
+    render: function (container, entries, sections, c) {
+      var byDay = taskThroughput();
+      var days = Object.keys(byDay).sort();
+      if (!days.length) { U.empty(container, "No completed tasks in this range."); return; }
+      var w = 600, h = 160, pad = 28;
+      var svg = U.svg(w, h);
+      var max = Math.max.apply(null, days.map(function (d) { return byDay[d]; }));
+      var bw = (w - pad) / days.length;
+      days.forEach(function (d, i) {
+        var bh = (h - pad) * (byDay[d] / max);
+        U.drawBar(svg, pad + i * bw, h - pad - bh, Math.max(bw - 2, 1), bh, c.accent);
+      });
+      container.appendChild(svg);
+      var vals = days.map(function (d) { return byDay[d]; });
+      var stat = U.describe(vals);
+      U.statsRow(container, [["total", vals.reduce(function (a, b) { return a + b; }, 0)],
+                             ["best day", stat.max], ["mean/day", U.fmt(stat.mean)]]);
+    },
+  });
+
+  // --- Tasks: overdue (completed late) + expiry ---
+  CHARTS.push({
+    id: "task-overdue", panel: "tasks", title: "On-time vs late & expired",
+    render: function (container, entries, sections, c) {
+      var t = _data.tasks || { archive: [], expired: [] };
+      function inR(d) { return d && (!_from || d >= _from) && (!_to || d <= _to); }
+      var late = 0, ontime = 0, expired = 0;
+      t.archive.forEach(function (x) {
+        if (!x.completed || !x.due) return;
+        if (!inR(x.completed.slice(0, 10))) return;
+        if (x.completed > x.due) late++; else ontime++;
+      });
+      t.expired.forEach(function (x) {
+        if (inR((x.expired_at || "").slice(0, 10))) expired++;
+      });
+      if (!(late + ontime + expired)) { U.empty(container, "No due/expired tasks in this range."); return; }
+      U.statsRow(container, [["on time", ontime], ["late", late], ["expired", expired]]);
+      // simple stacked bar
+      var w = 600, h = 40, total = late + ontime + expired, x = 0;
+      var svg = U.svg(w, h);
+      [["on time", ontime, c.accent], ["late", late, c.danger],
+       ["expired", expired, c.muted]].forEach(function (seg) {
+        var sw = (w) * (seg[1] / total);
+        if (sw > 0) { U.drawBar(svg, x, 8, sw, 20, seg[2]); x += sw; }
+      });
+      container.appendChild(svg);
+    },
+  });
+
+  // --- Tasks: recurring adherence ---
+  CHARTS.push({
+    id: "task-adherence", panel: "tasks", title: "Recurring-task adherence",
+    render: function (container, entries, sections, c) {
+      var t = _data.tasks || { archive: [], expired: [] };
+      function inR(d) { return d && (!_from || d >= _from) && (!_to || d <= _to); }
+      var done = t.archive.filter(function (x) {
+        return x.recurrence && inR((x.completed || "").slice(0, 10)); }).length;
+      var missed = t.expired.filter(function (x) {
+        return x.recurrence && inR((x.expired_at || "").slice(0, 10)); }).length;
+      var total = done + missed;
+      if (!total) { U.empty(container, "No recurring occurrences in this range."); return; }
+      var rate = Math.round((done / total) * 100);
+      U.statsRow(container, [["completed", done], ["missed", missed], ["hit rate", rate + "%"]]);
+      var w = 600, svg = U.svg(w, 40);
+      U.drawBar(svg, 0, 8, w * (done / total), 20, c.accent);
+      U.drawBar(svg, w * (done / total), 8, w * (missed / total), 20, c.danger);
+      container.appendChild(svg);
+    },
+  });
+
+  // --- Tasks: difficulty breakdown ---
+  CHARTS.push({
+    id: "task-difficulty", panel: "tasks", title: "Difficulty of completed tasks",
+    render: function (container, entries, sections, c) {
+      var t = _data.tasks || { archive: [] };
+      function inR(d) { return d && (!_from || d >= _from) && (!_to || d <= _to); }
+      var counts = { easy: 0, medium: 0, hard: 0, unrated: 0 };
+      t.archive.forEach(function (x) {
+        if (!inR((x.completed || "").slice(0, 10))) return;
+        counts[(x.difficulty) || "unrated"]++;
+      });
+      var order = ["easy", "medium", "hard", "unrated"];
+      var max = Math.max.apply(null, order.map(function (k) { return counts[k]; }));
+      if (!max) { U.empty(container, "No completed tasks in this range."); return; }
+      var w = 600, rowH = 22, svg = U.svg(w, order.length * rowH + 4);
+      order.forEach(function (k, i) {
+        var y = i * rowH + 2;
+        U.text(svg, 70 - 6, y + 14, k, c.text, { anchor: "end", size: 10 });
+        var bw = (w - 110) * (counts[k] / max);
+        U.drawBar(svg, 70, y + 4, bw, 13, k === "hard" ? c.danger : c.accent);
+        U.text(svg, 70 + bw + 4, y + 14, counts[k], c.muted, { size: 9 });
+      });
+      container.appendChild(svg);
+    },
+  });
+
+  // --- Tasks: task-tag frequency ---
+  CHARTS.push({
+    id: "task-tag-frequency", panel: "tasks", title: "Task tag frequency",
+    render: function (container, entries, sections, c) {
+      var t = _data.tasks || { archive: [], active: [], expired: [], tags: {} };
+      function inR(d) { return !d || ((!_from || d >= _from) && (!_to || d <= _to)); }
+      var freq = {};
+      t.archive.forEach(function (x) {
+        if (!inR((x.completed || "").slice(0, 10))) return;
+        (x.tags || []).forEach(function (tag) { freq[tag] = (freq[tag] || 0) + 1; });
+      });
+      var keys = Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a]; });
+      if (!keys.length) { U.empty(container, "No task tags in this range."); return; }
+      var w = 600, rowH = 18, pad = 90, svg = U.svg(w, keys.length * rowH + 6);
+      var max = Math.max.apply(null, keys.map(function (k) { return freq[k]; }));
+      keys.forEach(function (k, i) {
+        var y = i * rowH + 2;
+        var col = (t.tags && t.tags[k]) || c.accent;
+        U.text(svg, pad - 6, y + 12, k, c.text, { anchor: "end", size: 10 });
+        var bw = (w - pad - 30) * (freq[k] / max);
+        U.drawBar(svg, pad, y + 3, bw, 11, col);
+        U.text(svg, pad + bw + 4, y + 12, freq[k], c.muted, { size: 9 });
+      });
+      container.appendChild(svg);
     },
   });
 
