@@ -15,8 +15,10 @@ local time, matching todo.py.
 import json
 import math
 import os
+import statistics
 import uuid
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 
 from todo import _HEX_COLOR_RE, _TAG_NAME_RE
 
@@ -468,3 +470,43 @@ def move_entry(data, entry_id, new_date):
         raise ValueError(f"An entry already exists for {new_date!r}")
     entry["date"] = new_date
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Analytics: pure aggregation helpers (consumed by /journal/analytics/data)
+# --------------------------------------------------------------------------- #
+
+def _filter_entries_by_date(entries, start, end):
+    """Entries whose `date` falls in [start, end] inclusive. A None bound is
+    unbounded. YYYY-MM-DD strings compare lexically == chronologically."""
+    return [
+        e for e in entries
+        if (start is None or e.get("date", "") >= start)
+        and (end is None or e.get("date", "") <= end)
+    ]
+
+
+def describe(values):
+    """Summary statistics over a list of numbers (None/NaN-free callers).
+
+    Returns mean/median/mode/stdev/min/max/count. `mode` is None when no value
+    repeats (all unique); `stdev` is None for fewer than 2 values; an empty
+    input yields all-None with count 0. Sample stdev (n-1), matching JS.
+    """
+    vals = [float(v) for v in values if v is not None]
+    n = len(vals)
+    if n == 0:
+        return {"mean": None, "median": None, "mode": None,
+                "stdev": None, "min": None, "max": None, "count": 0}
+    counts = Counter(vals)
+    top = max(counts.values())
+    mode = None if top == 1 else min(v for v, c in counts.items() if c == top)
+    return {
+        "mean": statistics.mean(vals),
+        "median": statistics.median(vals),
+        "mode": mode,
+        "stdev": statistics.stdev(vals) if n >= 2 else None,
+        "min": min(vals),
+        "max": max(vals),
+        "count": n,
+    }
