@@ -1226,6 +1226,33 @@ h2 {
 .cs-date { position: relative; display: inline-block; }
 .cs-date .cal-popover { left: 0; right: auto; }
 
+/* Custom datetime picker (task due field): calendar popover + time row. */
+.dt-field { position: relative; display: inline-block; }
+.dt-trigger { min-width: 180px; }
+.dt-popover { left: 0; right: auto; }
+.dt-time-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.dt-time { width: 56px; text-align: center; }
+.dt-colon { color: var(--muted); }
+.dt-clear {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.dt-clear:hover { color: var(--accent); border-color: var(--accent); }
+
 /* Compact stats row under a chart. */
 .stats-row {
   display: flex;
