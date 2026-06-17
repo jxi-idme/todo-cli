@@ -1141,6 +1141,15 @@ h2 {
    shrink if they would overflow the panel — never stretched up to fill it. */
 .chart-svg-fixed { display: block; max-width: 100%; height: auto; overflow: visible; }
 
+/* Analytics "Entry calendar": reuses the journal .cal-* month grid. Lay the
+   month(s) out as fixed-width cards that wrap, so cells stay journal-sized
+   and a multi-month range flows onto multiple rows. Read-only (no hover). */
+.analytics-cal { display: flex; flex-wrap: wrap; gap: 1rem; }
+.analytics-cal .cal-month { width: 240px; }
+.analytics-cal .cal-month-title { margin-bottom: 0.55rem; }
+.analytics-cal .cal-day { cursor: default; }
+.analytics-cal .cal-day:not(.cal-day-blank):hover { background: none; }
+
 /* Compact stats row under a chart. */
 .stats-row {
   display: flex;

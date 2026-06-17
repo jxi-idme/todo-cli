@@ -260,6 +260,63 @@
     },
   });
 
+  // Month-grid calendar matching the journal entry form's custom calendar.
+  // Reuses the .cal-* classes from style.css so the look is identical; days
+  // with an entry get an amber dot under the number, today gets the amber ring.
+  var CAL_MONTHS = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  var CAL_DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+  function calIso(y, m, d) {
+    return y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  }
+
+  function buildMonthGrid(year, month, present, todayIso) {
+    var wrap = document.createElement("div");
+    wrap.className = "cal-month";
+
+    var title = document.createElement("div");
+    title.className = "cal-month-title";
+    title.textContent = CAL_MONTHS[month] + " " + year;
+    wrap.appendChild(title);
+
+    var grid = document.createElement("div");
+    grid.className = "cal-grid";
+    CAL_DAYS.forEach(function (d) {
+      var wh = document.createElement("div");
+      wh.className = "cal-weekday";
+      wh.textContent = d;
+      grid.appendChild(wh);
+    });
+
+    var firstDow = new Date(year, month, 1).getDay();
+    for (var b = 0; b < firstDow; b++) {
+      var blank = document.createElement("div");
+      blank.className = "cal-day cal-day-blank";
+      grid.appendChild(blank);
+    }
+
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (var day = 1; day <= daysInMonth; day++) {
+      var iso = calIso(year, month, day);
+      var cell = document.createElement("div");
+      cell.className = "cal-day";
+      if (iso === todayIso) cell.classList.add("is-today");
+      var num = document.createElement("span");
+      num.className = "cal-day-num";
+      num.textContent = String(day);
+      cell.appendChild(num);
+      if (present[iso]) {
+        var dot = document.createElement("span");
+        dot.className = "cal-dot";
+        cell.appendChild(dot);
+      }
+      grid.appendChild(cell);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
   CHARTS.push({
     id: "calendar-heatmap",
     panel: "consistency",
@@ -269,40 +326,21 @@
       if (!dates.length) { U.empty(container, "No entries in this range."); return; }
       var present = {};
       dates.forEach(function (d) { present[d] = true; });
-      // Grid: columns = ISO weeks, rows = weekday (Mon..Sun), from first to last date.
-      var start = new Date(dates[0] + "T00:00:00");
-      var end = new Date(dates[dates.length - 1] + "T00:00:00");
-      // Snap start back to Monday.
-      var startDow = (start.getDay() + 6) % 7;  // 0=Mon
-      start.setDate(start.getDate() - startDow);
-      var cell = 14, gap = 3, rows = 7, labelW = 34;
-      var totalDays = Math.round((end - start) / 86400000) + 1;
-      var cols = Math.ceil(totalDays / 7) + 1;
-      var w = labelW + cols * (cell + gap), h = rows * (cell + gap);
-      var svg = U.svgFixed(w, h);
-      var d = new Date(start);
-      var col = 0;
-      while (d <= end) {
-        var dow = (d.getDay() + 6) % 7;
-        var iso = d.getFullYear() + "-" +
-          String(d.getMonth() + 1).padStart(2, "0") + "-" +
-          String(d.getDate()).padStart(2, "0");
-        var on = !!present[iso];
-        svg.appendChild(U.svgEl("rect", {
-          x: labelW + col * (cell + gap),
-          y: dow * (cell + gap),
-          width: cell, height: cell, rx: 2,
-          class: "heat-cell",
-          fill: on ? c.accent : U.colorMix(c.muted, 18),
-        }));
-        if (dow === 6) col++;
-        d.setDate(d.getDate() + 1);
+      var now = new Date();
+      var todayIso = calIso(now.getFullYear(), now.getMonth(), now.getDate());
+
+      // One month grid per calendar month spanned by the filtered range.
+      var first = new Date(dates[0] + "T00:00:00");
+      var last = new Date(dates[dates.length - 1] + "T00:00:00");
+      var wrap = document.createElement("div");
+      wrap.className = "analytics-cal";
+      var y = first.getFullYear(), m = first.getMonth();
+      while (y < last.getFullYear() || (y === last.getFullYear() && m <= last.getMonth())) {
+        wrap.appendChild(buildMonthGrid(y, m, present, todayIso));
+        m++;
+        if (m > 11) { m = 0; y++; }
       }
-      ["Mon", "", "Wed", "", "Fri", "", "Sun"].forEach(function (lbl, i) {
-        if (lbl) U.text(svg, labelW - 6, i * (cell + gap) + cell - 2, lbl, c.muted,
-                        { anchor: "end", size: 10 });
-      });
-      container.appendChild(svg);
+      container.appendChild(wrap);
       U.statsRow(container, [["days with an entry", dates.length]]);
     },
   });
