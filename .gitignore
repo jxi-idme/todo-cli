@@ -1,4 +1,7 @@
-data/tasks.json
+# Ignore all runtime data (task/journal stores, logs, temp files); keep the
+# folder itself via data/.gitkeep so a fresh clone has somewhere to write.
+data/*
+!data/.gitkeep
 __pycache__/
 .venv/
 .pytest_cache/
