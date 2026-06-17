@@ -48,6 +48,11 @@ def journal_file():
 # server (Flask otherwise caches compiled templates when not run with --debug).
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
+# Don't let the browser cache static assets (CSS/JS): Flask defaults to a 12h
+# max-age on /static, which makes style/script edits appear to "not take effect"
+# until a hard refresh. Zero keeps this single-user dev app always current.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
 # Auto-quit watchdog: when AUTO_QUIT=1, the server exits ~30 s after the last
 # browser tab is closed. The browser pings /heartbeat every 10 s; if the server
 # goes 30 s without a ping it sends itself SIGTERM and exits cleanly.
