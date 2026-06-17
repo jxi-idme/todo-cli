@@ -6,6 +6,7 @@ numbers {sid: float}, body, created.
 """
 
 import journal
+from datetime import datetime
 
 
 def _entry(date, tags=None, numbers=None, body="", created=None):
@@ -220,3 +221,45 @@ def test_section_coverage_marks_filled_sections():
         {"date": "2026-06-01", "covered": ["a", "b"]},
         {"date": "2026-06-02", "covered": []},
     ]
+
+
+# --------------------------------------------------------------------------- #
+# analytics_payload
+# --------------------------------------------------------------------------- #
+
+def test_analytics_payload_shape():
+    data = journal._empty()
+    sec = journal.add_section(data, "people", "tag", "#e0a955")
+    journal.add_section_tag(data, sec["id"], "alex")
+    journal.upsert_entry(
+        data, "2026-06-10", "title", "two words",
+        tags={sec["id"]: ["alex"]}, numbers={},
+        now=datetime(2026, 6, 10, 9, 0, 0),
+    )
+    payload = journal.analytics_payload(data)
+
+    assert set(payload) == {"sections", "entries", "date_range"}
+    s = payload["sections"][0]
+    assert set(s) == {"id", "name", "type", "color", "tags", "unit"}
+    assert s["name"] == "people" and s["tags"] == ["alex"]
+    e = payload["entries"][0]
+    assert set(e) == {"date", "tags", "numbers", "body", "created"}
+    assert e["date"] == "2026-06-10"
+    assert payload["date_range"] == {"min": "2026-06-10", "max": "2026-06-10"}
+
+
+def test_analytics_payload_excludes_archived_sections():
+    data = journal._empty()
+    keep = journal.add_section(data, "people", "tag", "#e0a955")
+    gone = journal.add_section(data, "work", "tag", "#e06666")
+    journal.archive_section(data, gone["id"])
+    payload = journal.analytics_payload(data)
+    names = [s["name"] for s in payload["sections"]]
+    assert names == ["people"]
+    assert keep["id"] in {s["id"] for s in payload["sections"]}
+
+
+def test_analytics_payload_empty_date_range():
+    payload = journal.analytics_payload(journal._empty())
+    assert payload["entries"] == []
+    assert payload["date_range"] == {"min": None, "max": None}

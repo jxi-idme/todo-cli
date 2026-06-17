@@ -682,3 +682,37 @@ def section_coverage(entries, active_section_ids, start, end):
         covered = [sid for sid in ids if tags.get(sid) or sid in nums]
         out.append({"date": e["date"], "covered": covered})
     return out
+
+
+def analytics_payload(data):
+    """The full JSON payload for the analytics page.
+
+    `sections` lists active sections only (archived ones are dropped, but their
+    historical values stay in `entries` keyed by section id — the JS simply
+    never references an unknown id). `date_range` spans all entry dates.
+    """
+    sections = [
+        {
+            "id": s["id"],
+            "name": s["name"],
+            "type": s["type"],
+            "color": s["color"],
+            "tags": list(s.get("tags") or []),
+            "unit": s.get("unit"),
+        }
+        for s in active_sections(data)
+    ]
+    entries = [
+        {
+            "date": e["date"],
+            "tags": dict(e.get("tags") or {}),
+            "numbers": dict(e.get("numbers") or {}),
+            "body": e.get("body", ""),
+            "created": e.get("created"),
+        }
+        for e in data.get("entries", [])
+    ]
+    dates = sorted(e["date"] for e in entries if e.get("date"))
+    date_range = ({"min": dates[0], "max": dates[-1]}
+                  if dates else {"min": None, "max": None})
+    return {"sections": sections, "entries": entries, "date_range": date_range}
