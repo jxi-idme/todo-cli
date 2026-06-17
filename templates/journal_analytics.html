@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block brand_mascot %}
+  <img class="mascot" src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+       width="56" height="56" alt="pompompurin">
+{% endblock %}
+{% block brand_title %}
+  <span class="site-title">journal</span>
+{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('journal_today') }}">New entry</a>
+  <a href="{{ url_for('journal_search') }}">Search</a>
+  <a href="{{ url_for('journal_analytics') }}">Analytics</a>
+  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+{% endblock %}
+{% block content %}
+  <div class="analytics" id="analytics-root"
+       data-endpoint="{{ url_for('journal_analytics_data') }}">
+    <div class="analytics-tabs" role="tablist"></div>
+    <div class="analytics-filter">
+      <span class="filter-label">from</span>
+      <div class="cs-date">
+        <button type="button" class="cs-trigger" data-datepicker="date-from" aria-haspopup="dialog">
+          <span class="cs-value">—</span><span class="cal-caret">▾</span>
+        </button>
+        <input type="hidden" id="date-from">
+      </div>
+      <span class="filter-label">to</span>
+      <div class="cs-date">
+        <button type="button" class="cs-trigger" data-datepicker="date-to" aria-haspopup="dialog">
+          <span class="cs-value">—</span><span class="cal-caret">▾</span>
+        </button>
+        <input type="hidden" id="date-to">
+      </div>
+      <button type="button" id="date-reset">reset</button>
+    </div>
+    <div class="analytics-panels"></div>
+    <p class="analytics-empty" id="analytics-loading">Loading…</p>
+  </div>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
+{% endblock %}

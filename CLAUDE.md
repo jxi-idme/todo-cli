@@ -209,22 +209,47 @@ The app is a combined **daily journal + to-do** with an analytics-ready data
 model (numeric sections stored as floats, entries keyed by stable section ids,
 sections soft-deleted for historical continuity).
 
-### Next: Data analytics page
+### Data analytics page — DONE (journal data)
 
-Add a `/journal/analytics` page that visualizes journal data across time. Ideas:
+The `/journal/analytics` page is **implemented and shipped** for journal data.
+Most analytics functionality is complete; only minor UI polish remains.
 
-- **Line / bar charts** per numeric section (e.g. sleep hours over 30/90 days)
-- **Tag frequency** charts — how often each permanent tag appears across entries
-- **Streak / habit tracking** — consecutive days with entries, or with a specific
-  tag checked
-- **Numeric correlations** — scatter plots between two numeric sections
-- **Calendar heatmap** — entry density or a chosen numeric value overlaid on a
-  calendar grid
-- **Filterable date range** — all charts respond to a shared date-range picker
+What exists today:
 
-Implementation notes: data is available from `journal.search_index(data)` and
-`journal.numeric_bounds(data)`; extend `journal.py` with aggregation helpers as
-needed (pure, testable). Render charts client-side (e.g. Chart.js or a lightweight
-SVG approach) from JSON embedded in the page, keeping the pure-logic/HTTP split.
-No new dependencies required if using vanilla SVG/Canvas; Chart.js is an
-acceptable single addition if richer chart types are needed.
+- **Routes**: `GET /journal/analytics` (page shell) and
+  `GET /journal/analytics/data` (`jsonify(journal.analytics_payload(data))`).
+- **Pure aggregation helpers** in `journal.py` (all testable, injectable date
+  bounds): `analytics_payload`, `describe`, `tag_frequency`, `tag_cooccurrence`,
+  `tag_trend`, `tag_streak`, `entry_streak`, `numeric_series`, `dow_averages`,
+  `word_counts`, `entry_gaps`, `creation_hours`, `date_density`,
+  `section_coverage`, plus `_filter_entries_by_date`.
+- **`static/analytics.js`** — vanilla SVG charts via a `CHARTS` registry
+  (add a chart = append one descriptor). Five tabs: Overview, Consistency
+  (entry calendar, words/entry, gaps, time-of-day), Tags (frequency, trend,
+  per-tag heatmap, co-occurrence), Numeric (line + rolling avg, day-of-week,
+  correlation scatter), Coverage. Shared date-range filter; refetches on load
+  and on window focus (10s debounce). Colors read from CSS vars + section hex.
+- **`templates/journal_analytics.html`** + analytics styles in `style.css`
+  (`.analytics-*`, `.chart-svg`/`.chart-svg-fixed`). Tests in
+  `tests/test_journal_analytics.py` and route tests in `test_journal_app.py`.
+
+**Remaining: minor UI changes** — small layout/styling polish only.
+
+### Next: incorporate task data into analytics
+
+Combine **to-do/task data** (`data/tasks.json`: `active`/`archive`/`expired`,
+recurrence, tags, due/completed timestamps) with journal data in the analytics
+page. Goal is a unified view across both domains. Ideas to explore:
+
+- Task completion rate / throughput over time; overdue and expiry trends.
+- Recurring-task adherence (completed vs. missed occurrences).
+- Cross-domain correlation: task load vs. journal numeric sections (e.g. tasks
+  completed vs. sleep), or task tags alongside journal tags.
+- Calendar/heatmap overlays combining entry days and task completions.
+
+Implementation notes: keep the pure-logic/HTTP split — add task-side
+aggregation helpers in `todo.py` (pure, testable, injectable `now`), and either
+extend `analytics_payload` or add a parallel task payload that the analytics
+route merges. Reuse the existing `CHARTS` registry and SVG utilities in
+`analytics.js`; no new dependencies. Tags are shared vocabulary across tasks and
+journal sections, so tag-based cross-domain charts are a natural first step.

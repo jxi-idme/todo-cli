@@ -15,8 +15,10 @@ local time, matching todo.py.
 import json
 import math
 import os
+import statistics
 import uuid
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 
 from todo import _HEX_COLOR_RE, _TAG_NAME_RE
 
@@ -468,3 +470,249 @@ def move_entry(data, entry_id, new_date):
         raise ValueError(f"An entry already exists for {new_date!r}")
     entry["date"] = new_date
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Analytics: pure aggregation helpers (consumed by /journal/analytics/data)
+# --------------------------------------------------------------------------- #
+
+def _filter_entries_by_date(entries, start, end):
+    """Entries whose `date` falls in [start, end] inclusive. A None bound is
+    unbounded. YYYY-MM-DD strings compare lexically == chronologically."""
+    return [
+        e for e in entries
+        if (start is None or e.get("date", "") >= start)
+        and (end is None or e.get("date", "") <= end)
+    ]
+
+
+def describe(values):
+    """Summary statistics over a list of numbers (None/NaN-free callers).
+
+    Returns mean/median/mode/stdev/min/max/count. `mode` is None when no value
+    repeats (all unique); `stdev` is None for fewer than 2 values; an empty
+    input yields all-None with count 0. Sample stdev (n-1), matching JS.
+    """
+    vals = [float(v) for v in values if v is not None]
+    n = len(vals)
+    if n == 0:
+        return {"mean": None, "median": None, "mode": None,
+                "stdev": None, "min": None, "max": None, "count": 0}
+    counts = Counter(vals)
+    top = max(counts.values())
+    mode = None if top == 1 else min(v for v, c in counts.items() if c == top)
+    return {
+        "mean": statistics.mean(vals),
+        "median": statistics.median(vals),
+        "mode": mode,
+        "stdev": statistics.stdev(vals) if n >= 2 else None,
+        "min": min(vals),
+        "max": max(vals),
+        "count": n,
+    }
+
+
+def _tags_for(entry, section_id):
+    """The tag-name list this entry recorded for `section_id` (possibly empty)."""
+    return (entry.get("tags") or {}).get(section_id, []) or []
+
+
+def tag_frequency(entries, section_id, start, end):
+    """{tag: count} across date-filtered entries for one section."""
+    out = {}
+    for e in _filter_entries_by_date(entries, start, end):
+        for tag in _tags_for(e, section_id):
+            out[tag] = out.get(tag, 0) + 1
+    return out
+
+
+def tag_cooccurrence(entries, section_id, start, end):
+    """{tag: {other_tag: count}} of tags appearing together on the same entry,
+    within one section. Symmetric; self-pairs excluded."""
+    out = {}
+    for e in _filter_entries_by_date(entries, start, end):
+        tags = sorted(set(_tags_for(e, section_id)))
+        for a in tags:
+            for b in tags:
+                if a == b:
+                    continue
+                out.setdefault(a, {})
+                out[a][b] = out[a].get(b, 0) + 1
+    return out
+
+
+def tag_trend(entries, section_id, tag, start, end):
+    """[{week, count}] of a single tag's frequency per ISO week, sorted."""
+    weeks = {}
+    for e in _filter_entries_by_date(entries, start, end):
+        if tag in _tags_for(e, section_id):
+            d = datetime.strptime(e["date"], "%Y-%m-%d").date()
+            iso = d.isocalendar()
+            key = f"{iso[0]}-W{iso[1]:02d}"
+            weeks[key] = weeks.get(key, 0) + 1
+    return [{"week": k, "count": weeks[k]} for k in sorted(weeks)]
+
+
+def tag_streak(entries, section_id, tag):
+    """{current, longest, avg} over consecutive-day runs where `tag` appears.
+    `current` is the run ending at the latest tagged day; `avg` is the mean run
+    length. All zero when the tag never appears."""
+    dates = sorted({
+        e["date"] for e in entries
+        if e.get("date") and tag in _tags_for(e, section_id)
+    })
+    if not dates:
+        return {"current": 0, "longest": 0, "avg": 0}
+    parsed = [datetime.strptime(d, "%Y-%m-%d").date() for d in dates]
+    runs = []
+    run = 1
+    for i in range(1, len(parsed)):
+        if parsed[i] - parsed[i - 1] == timedelta(days=1):
+            run += 1
+        else:
+            runs.append(run)
+            run = 1
+    runs.append(run)
+    return {"current": runs[-1], "longest": max(runs), "avg": sum(runs) / len(runs)}
+
+
+_DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def numeric_series(entries, section_id, start, end):
+    """[{date, value}] of one numeric section's recorded values, sorted by date."""
+    out = [
+        {"date": e["date"], "value": (e.get("numbers") or {})[section_id]}
+        for e in _filter_entries_by_date(entries, start, end)
+        if section_id in (e.get("numbers") or {})
+    ]
+    out.sort(key=lambda d: d["date"])
+    return out
+
+
+def dow_averages(entries, section_id, start, end):
+    """{weekday_name: mean value | None} for one numeric section, Mon..Sun."""
+    buckets = {i: [] for i in range(7)}
+    for e in _filter_entries_by_date(entries, start, end):
+        nums = e.get("numbers") or {}
+        if section_id in nums:
+            d = datetime.strptime(e["date"], "%Y-%m-%d").date()
+            buckets[d.weekday()].append(nums[section_id])
+    return {
+        _DOW_NAMES[i]: (sum(v) / len(v) if v else None)
+        for i, v in buckets.items()
+    }
+
+
+def word_counts(entries, start, end):
+    """[{date, count}] of body word counts (whitespace split), sorted by date."""
+    out = [
+        {"date": e["date"], "count": len((e.get("body") or "").split())}
+        for e in _filter_entries_by_date(entries, start, end)
+    ]
+    out.sort(key=lambda d: d["date"])
+    return out
+
+
+def entry_gaps(entries, start, end):
+    """[{gap_days, after_date}] day-gaps between consecutive entry dates."""
+    dates = sorted({
+        e["date"] for e in _filter_entries_by_date(entries, start, end)
+        if e.get("date")
+    })
+    parsed = [datetime.strptime(d, "%Y-%m-%d").date() for d in dates]
+    return [
+        {"gap_days": (parsed[i] - parsed[i - 1]).days, "after_date": dates[i]}
+        for i in range(1, len(parsed))
+    ]
+
+
+def creation_hours(entries, start, end):
+    """{0..23: count} histogram of entry `created` timestamps' hour."""
+    out = {h: 0 for h in range(24)}
+    for e in _filter_entries_by_date(entries, start, end):
+        created = e.get("created")
+        if not created:
+            continue
+        try:
+            out[datetime.fromisoformat(created).hour] += 1
+        except ValueError:
+            continue
+    return out
+
+
+def date_density(entries, start, end):
+    """{date: 1} for every day that has an entry (calendar heatmap presence)."""
+    return {
+        e["date"]: 1
+        for e in _filter_entries_by_date(entries, start, end)
+        if e.get("date")
+    }
+
+
+def entry_streak(entries):
+    """{current, longest, last_date} over consecutive calendar days with an
+    entry. `current` is the run ending at the most recent entry date."""
+    dates = sorted({e["date"] for e in entries if e.get("date")})
+    if not dates:
+        return {"current": 0, "longest": 0, "last_date": None}
+    parsed = [datetime.strptime(d, "%Y-%m-%d").date() for d in dates]
+    longest = run = 1
+    for i in range(1, len(parsed)):
+        run = run + 1 if parsed[i] - parsed[i - 1] == timedelta(days=1) else 1
+        longest = max(longest, run)
+    current = 1
+    for i in range(len(parsed) - 1, 0, -1):
+        if parsed[i] - parsed[i - 1] == timedelta(days=1):
+            current += 1
+        else:
+            break
+    return {"current": current, "longest": longest, "last_date": dates[-1]}
+
+
+def section_coverage(entries, active_section_ids, start, end):
+    """[{date, covered:[section_id]}] per entry (date-sorted). A section counts
+    as covered when the entry has a non-empty tag list or a number for it."""
+    ids = list(active_section_ids)
+    out = []
+    for e in sorted(_filter_entries_by_date(entries, start, end),
+                    key=lambda x: x.get("date", "")):
+        tags = e.get("tags") or {}
+        nums = e.get("numbers") or {}
+        covered = [sid for sid in ids if tags.get(sid) or sid in nums]
+        out.append({"date": e["date"], "covered": covered})
+    return out
+
+
+def analytics_payload(data):
+    """The full JSON payload for the analytics page.
+
+    `sections` lists active sections only (archived ones are dropped, but their
+    historical values stay in `entries` keyed by section id — the JS simply
+    never references an unknown id). `date_range` spans all entry dates.
+    """
+    sections = [
+        {
+            "id": s["id"],
+            "name": s["name"],
+            "type": s["type"],
+            "color": s["color"],
+            "tags": list(s.get("tags") or []),
+            "unit": s.get("unit"),
+        }
+        for s in active_sections(data)
+    ]
+    entries = [
+        {
+            "date": e["date"],
+            "tags": dict(e.get("tags") or {}),
+            "numbers": dict(e.get("numbers") or {}),
+            "body": e.get("body", ""),
+            "created": e.get("created"),
+        }
+        for e in data.get("entries", [])
+    ]
+    dates = sorted(e["date"] for e in entries if e.get("date"))
+    date_range = ({"min": dates[0], "max": dates[-1]}
+                  if dates else {"min": None, "max": None})
+    return {"sections": sections, "entries": entries, "date_range": date_range}

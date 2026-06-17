@@ -322,12 +322,45 @@ def test_add_task_default_recurrence_is_none():
     assert data["active"][0]["recurrence"] is None
 
 
-def test_add_task_recurrence_without_due_rejected():
-    # Recurrence requires a due date.
+def test_add_task_recurrence_without_due_defaults_to_2359():
+    # A recurring task with no entered due date defaults to 23:59 local,
+    # one interval out: daily -> same day.
     data = todo._empty()
-    with pytest.raises(ValueError):
-        todo.add_task(data, "No due", recurrence="daily")
-    assert data["active"] == []
+    now = datetime(2026, 6, 17, 10, 0, 0)
+    todo.add_task(data, "Daily", recurrence="daily", now=now)
+    t = data["active"][0]
+    assert t["due"] == "2026-06-17T23:59:00"
+    assert t["recurrence"] == "daily"
+
+
+def test_add_task_weekly_without_due_defaults_one_week():
+    data = todo._empty()
+    now = datetime(2026, 6, 17, 10, 0, 0)
+    todo.add_task(data, "Weekly", recurrence="weekly", now=now)
+    assert data["active"][0]["due"] == "2026-06-24T23:59:00"
+
+
+def test_add_task_monthly_without_due_defaults_one_month():
+    data = todo._empty()
+    now = datetime(2026, 6, 17, 10, 0, 0)
+    todo.add_task(data, "Monthly", recurrence="monthly", now=now)
+    assert data["active"][0]["due"] == "2026-07-17T23:59:00"
+
+
+def test_add_task_every_n_without_due_defaults_n_days():
+    data = todo._empty()
+    now = datetime(2026, 6, 17, 10, 0, 0)
+    todo.add_task(data, "Every 3", recurrence="every:3", now=now)
+    assert data["active"][0]["due"] == "2026-06-20T23:59:00"
+
+
+def test_add_task_recurrence_with_due_uses_entered_value():
+    # An explicit due date is always honored, even with a recurrence.
+    data = todo._empty()
+    now = datetime(2026, 6, 17, 10, 0, 0)
+    todo.add_task(data, "Has due", due="2026-09-01T09:00:00",
+                  recurrence="daily", now=now)
+    assert data["active"][0]["due"] == "2026-09-01T09:00:00"
 
 
 def test_add_task_bad_recurrence_rejected():
@@ -397,12 +430,14 @@ def test_edit_task_bad_due_rejected():
         todo.edit_task(data, tid, "Keep", due="nope")
 
 
-def test_edit_task_recurrence_without_due_rejected():
+def test_edit_task_recurrence_without_due_defaults():
     data = todo._empty()
     todo.add_task(data, "Keep")
     tid = data["active"][0]["id"]
-    with pytest.raises(ValueError):
-        todo.edit_task(data, tid, "Keep", recurrence="daily")
+    now = datetime(2026, 6, 17, 10, 0, 0)
+    todo.edit_task(data, tid, "Keep", recurrence="weekly", now=now)
+    assert data["active"][0]["due"] == "2026-06-24T23:59:00"
+    assert data["active"][0]["recurrence"] == "weekly"
 
 
 def test_edit_task_unknown_id_is_noop():
