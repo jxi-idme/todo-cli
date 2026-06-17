@@ -648,3 +648,37 @@ def date_density(entries, start, end):
         for e in _filter_entries_by_date(entries, start, end)
         if e.get("date")
     }
+
+
+def entry_streak(entries):
+    """{current, longest, last_date} over consecutive calendar days with an
+    entry. `current` is the run ending at the most recent entry date."""
+    dates = sorted({e["date"] for e in entries if e.get("date")})
+    if not dates:
+        return {"current": 0, "longest": 0, "last_date": None}
+    parsed = [datetime.strptime(d, "%Y-%m-%d").date() for d in dates]
+    longest = run = 1
+    for i in range(1, len(parsed)):
+        run = run + 1 if parsed[i] - parsed[i - 1] == timedelta(days=1) else 1
+        longest = max(longest, run)
+    current = 1
+    for i in range(len(parsed) - 1, 0, -1):
+        if parsed[i] - parsed[i - 1] == timedelta(days=1):
+            current += 1
+        else:
+            break
+    return {"current": current, "longest": longest, "last_date": dates[-1]}
+
+
+def section_coverage(entries, active_section_ids, start, end):
+    """[{date, covered:[section_id]}] per entry (date-sorted). A section counts
+    as covered when the entry has a non-empty tag list or a number for it."""
+    ids = list(active_section_ids)
+    out = []
+    for e in sorted(_filter_entries_by_date(entries, start, end),
+                    key=lambda x: x.get("date", "")):
+        tags = e.get("tags") or {}
+        nums = e.get("numbers") or {}
+        covered = [sid for sid in ids if tags.get(sid) or sid in nums]
+        out.append({"date": e["date"], "covered": covered})
+    return out

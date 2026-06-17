@@ -191,3 +191,32 @@ def test_creation_hours_histogram():
 def test_date_density_presence_per_day():
     entries = [_entry("2026-06-01"), _entry("2026-06-03")]
     assert journal.date_density(entries, None, None) == {"2026-06-01": 1, "2026-06-03": 1}
+
+
+# --------------------------------------------------------------------------- #
+# Entry-level aggregations
+# --------------------------------------------------------------------------- #
+
+def test_entry_streak_current_longest_last():
+    entries = [
+        _entry("2026-06-01"), _entry("2026-06-02"), _entry("2026-06-03"),  # run 3
+        _entry("2026-06-10"), _entry("2026-06-11"),  # run 2 (latest)
+    ]
+    assert journal.entry_streak(entries) == {
+        "current": 2, "longest": 3, "last_date": "2026-06-11"}
+
+
+def test_entry_streak_empty():
+    assert journal.entry_streak([]) == {"current": 0, "longest": 0, "last_date": None}
+
+
+def test_section_coverage_marks_filled_sections():
+    entries = [
+        _entry("2026-06-01", tags={"a": ["x"]}, numbers={"b": 1.0}),
+        _entry("2026-06-02", tags={"a": []}),  # empty tag list -> not covered
+    ]
+    cov = journal.section_coverage(entries, ["a", "b"], None, None)
+    assert cov == [
+        {"date": "2026-06-01", "covered": ["a", "b"]},
+        {"date": "2026-06-02", "covered": []},
+    ]
