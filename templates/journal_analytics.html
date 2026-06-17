@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block brand_mascot %}
+  <img class="mascot" src="{{ url_for('static', filename='img/pompompurin.gif') }}"
+       width="56" height="56" alt="pompompurin">
+{% endblock %}
+{% block brand_title %}
+  <span class="site-title">journal</span>
+{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('journal_today') }}">New entry</a>
+  <a href="{{ url_for('journal_search') }}">Search</a>
+  <a href="{{ url_for('journal_analytics') }}">Analytics</a>
+  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+{% endblock %}
+{% block content %}
+  <div class="analytics" id="analytics-root"
+       data-endpoint="{{ url_for('journal_analytics_data') }}">
+    <div class="analytics-tabs" role="tablist"></div>
+    <div class="analytics-filter">
+      <label>from <input type="date" id="date-from"></label>
+      <label>to <input type="date" id="date-to"></label>
+      <button type="button" id="date-reset">reset</button>
+    </div>
+    <div class="analytics-panels"></div>
+    <p class="analytics-empty" id="analytics-loading">Loading…</p>
+  </div>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
+{% endblock %}
