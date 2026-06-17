@@ -263,14 +263,16 @@
       start.setDate(start.getDate() - startDow);
       var cell = 13, gap = 2, rows = 7;
       var totalDays = Math.round((end - start) / 86400000) + 1;
-      var cols = Math.ceil((totalDays + ((start.getDay() + 6) % 7)) / 7) + 1;
+      var cols = Math.ceil(totalDays / 7) + 1;
       var w = cols * (cell + gap) + 30, h = rows * (cell + gap) + 20;
       var svg = U.svg(w, h);
       var d = new Date(start);
       var col = 0;
       while (d <= end) {
         var dow = (d.getDay() + 6) % 7;
-        var iso = d.toISOString().slice(0, 10);
+        var iso = d.getFullYear() + "-" +
+          String(d.getMonth() + 1).padStart(2, "0") + "-" +
+          String(d.getDate()).padStart(2, "0");
         var on = !!present[iso];
         svg.appendChild(U.svgEl("rect", {
           x: 30 + col * (cell + gap),
