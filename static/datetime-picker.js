@@ -139,36 +139,15 @@
           if (selDate) commit(selDate, h, min);
         }
 
-        // A number field with custom ▲/▼ steppers (native spinners are hidden
-        // via CSS). Values wrap around their max for quick HH/MM entry.
+        // A plain typeable number field (no spinner arrows — native spinners
+        // are hidden via CSS, and we intentionally render no custom steppers).
         function timeField(initial, max) {
           var fwrap = document.createElement("div");
           fwrap.className = "dt-time-wrap";
           var input = document.createElement("input");
           input.type = "number"; input.min = 0; input.max = max;
           input.className = "dt-time"; input.value = pad(initial);
-          var steps = document.createElement("div");
-          steps.className = "dt-step";
-          var up = document.createElement("button");
-          up.type = "button"; up.className = "dt-step-btn dt-up";
-          up.setAttribute("aria-label", "increment");
-          var down = document.createElement("button");
-          down.type = "button"; down.className = "dt-step-btn dt-down";
-          down.setAttribute("aria-label", "decrement");
-          function set(n) {
-            if (n < 0) n = max;
-            if (n > max) n = 0;
-            input.value = pad(n);
-            onTime();
-          }
-          up.addEventListener("click", function (e) {
-            e.stopPropagation(); set((parseInt(input.value, 10) || 0) + 1);
-          });
-          down.addEventListener("click", function (e) {
-            e.stopPropagation(); set((parseInt(input.value, 10) || 0) - 1);
-          });
-          steps.appendChild(up); steps.appendChild(down);
-          fwrap.appendChild(input); fwrap.appendChild(steps);
+          fwrap.appendChild(input);
           return { el: fwrap, input: input };
         }
 
