@@ -253,6 +253,14 @@ def archive():
     )
 
 
+@app.route("/archive/<task_id>/difficulty", methods=["POST"])
+def set_task_difficulty(task_id):
+    data = todo.load(data_file())
+    todo.set_difficulty(data, task_id, request.form.get("difficulty", ""))
+    todo.save(data_file(), data)
+    return redirect(url_for("archive"))
+
+
 @app.route("/tags", methods=["GET"])
 def tags():
     data = todo.load(data_file())

@@ -38,6 +38,16 @@
             <span class="title">{{ task.title }}</span>
           {% endif %}
           <span class="badge">completed {{ task.completed }}</span>
+          <form class="difficulty-form" method="post"
+                action="{{ url_for('set_task_difficulty', task_id=task.id) }}">
+            <select name="difficulty" class="difficulty-select"
+                    onchange="this.form.submit()">
+              <option value="" {% if not task.difficulty %}selected{% endif %}>— difficulty —</option>
+              {% for opt in ["easy", "medium", "hard"] %}
+                <option value="{{ opt }}" {% if task.difficulty == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </form>
           <button form="delete-{{ task.id }}" type="submit" class="delete">x</button>
         </li>
       {% endfor %}

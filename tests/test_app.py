@@ -578,3 +578,33 @@ def test_active_page_has_difficulty_picker(client):
     data = todo.load(_data_path(client))
     tid = data["active"][0]["id"]
     assert f'name="difficulty:{tid}"' in html
+
+
+def _archive_one(client, title="done"):
+    client.post("/add", data={"title": title})
+    data = todo.load(_data_path(client))
+    tid = data["active"][0]["id"]
+    client.post("/refresh", data={"completed": tid})
+    return tid
+
+
+def test_archive_difficulty_edit_sets_value(client):
+    tid = _archive_one(client)
+    resp = client.post(f"/archive/{tid}/difficulty", data={"difficulty": "medium"})
+    assert resp.status_code == 302
+    data = todo.load(_data_path(client))
+    assert data["archive"][0]["difficulty"] == "medium"
+
+
+def test_archive_difficulty_edit_clears_value(client):
+    tid = _archive_one(client)
+    client.post(f"/archive/{tid}/difficulty", data={"difficulty": "hard"})
+    client.post(f"/archive/{tid}/difficulty", data={"difficulty": ""})
+    data = todo.load(_data_path(client))
+    assert "difficulty" not in data["archive"][0]
+
+
+def test_archive_page_shows_difficulty_control(client):
+    _archive_one(client)
+    html = client.get("/archive").get_data(as_text=True)
+    assert "difficulty-select" in html

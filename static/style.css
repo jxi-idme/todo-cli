@@ -1317,3 +1317,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 .kind-toggle-opt input { accent-color: var(--accent); }
 .kind-toggle-opt:hover { color: var(--accent); }
+
+/* ----- archive difficulty control ----- */
+.difficulty-form { display: inline; }
+.difficulty-select { font-size: 0.78rem; padding: 0.15rem 0.4rem; }
