@@ -1238,7 +1238,6 @@ h2 {
   padding-top: 0.6rem;
   border-top: 1px solid var(--border);
 }
-.dt-time { width: 44px; text-align: center; }
 .dt-colon { color: var(--muted); }
 
 /* Hide native number spinners (light, clash with dark theme) app-wide. */
@@ -1249,11 +1248,15 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 
-/* Custom themed ▲/▼ steppers for the time fields. The stepper is a single
-   bordered column (matching the input height) split into two equal halves, so
-   the arrow pair is centered against the number. */
-.dt-time-wrap { display: inline-flex; align-items: stretch; }
+/* Custom themed ▲/▼ steppers for the time fields. Input and stepper share an
+   explicit height so the arrow pair lines up centered against the number, and
+   the stepper sits flush against the input (shared border edge). */
+.dt-time-wrap { display: inline-flex; align-items: stretch; height: 34px; }
 .dt-time-wrap .dt-time {
+  width: 42px;
+  height: 34px;
+  padding: 0 0.3rem;
+  text-align: center;
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border-right: none;
@@ -1261,6 +1264,8 @@ input[type="number"]::-webkit-inner-spin-button {
 .dt-step {
   display: flex;
   flex-direction: column;
+  width: 20px;
+  height: 34px;
   border: 1px solid var(--border);
   border-left: none;
   border-top-right-radius: 4px;
@@ -1276,7 +1281,7 @@ input[type="number"]::-webkit-inner-spin-button {
   border: none;
   color: var(--muted);
   cursor: pointer;
-  padding: 0 0.4rem;
+  padding: 0;
   font-size: 0.5rem;
   line-height: 1;
 }
