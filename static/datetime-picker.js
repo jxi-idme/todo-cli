@@ -150,9 +150,11 @@
           var steps = document.createElement("div");
           steps.className = "dt-step";
           var up = document.createElement("button");
-          up.type = "button"; up.className = "dt-step-btn"; up.textContent = "▲";
+          up.type = "button"; up.className = "dt-step-btn dt-up";
+          up.setAttribute("aria-label", "increment");
           var down = document.createElement("button");
-          down.type = "button"; down.className = "dt-step-btn"; down.textContent = "▼";
+          down.type = "button"; down.className = "dt-step-btn dt-down";
+          down.setAttribute("aria-label", "decrement");
           function set(n) {
             if (n < 0) n = max;
             if (n > max) n = 0;

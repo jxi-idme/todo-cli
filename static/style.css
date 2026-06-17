@@ -1282,11 +1282,20 @@ input[type="number"]::-webkit-inner-spin-button {
   color: var(--muted);
   cursor: pointer;
   padding: 0;
-  font-size: 0.5rem;
-  line-height: 1;
 }
 .dt-step-btn:first-child { border-bottom: 1px solid var(--border); }
 .dt-step-btn:hover { color: var(--accent); }
+/* CSS border-triangles — font-independent, precisely centered by the flexbox. */
+.dt-step-btn::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+}
+.dt-up::before { border-bottom: 4px solid currentColor; }
+.dt-down::before { border-top: 4px solid currentColor; }
 .dt-clear {
   margin-left: auto;
   background: none;
