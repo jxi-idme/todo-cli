@@ -122,3 +122,72 @@ def test_tag_streak_runs_and_average():
 
 def test_tag_streak_absent_tag_is_zeroes():
     assert journal.tag_streak([], SID, "walk") == {"current": 0, "longest": 0, "avg": 0}
+
+
+# --------------------------------------------------------------------------- #
+# Temporal & numeric aggregations
+# --------------------------------------------------------------------------- #
+
+NUM = "sec-sleep"
+
+
+def test_numeric_series_sorted_and_filtered():
+    entries = [
+        _entry("2026-06-03", numbers={NUM: 7.0}),
+        _entry("2026-06-01", numbers={NUM: 6.5}),
+        _entry("2026-06-02", numbers={}),  # no value -> skipped
+    ]
+    assert journal.numeric_series(entries, NUM, None, None) == [
+        {"date": "2026-06-01", "value": 6.5},
+        {"date": "2026-06-03", "value": 7.0},
+    ]
+
+
+def test_dow_averages_by_weekday():
+    # 2026-06-01 is a Monday.
+    entries = [
+        _entry("2026-06-01", numbers={NUM: 6.0}),  # Mon
+        _entry("2026-06-08", numbers={NUM: 8.0}),  # Mon
+        _entry("2026-06-02", numbers={NUM: 5.0}),  # Tue
+    ]
+    dow = journal.dow_averages(entries, NUM, None, None)
+    assert dow["Mon"] == 7.0
+    assert dow["Tue"] == 5.0
+    assert dow["Wed"] is None
+
+
+def test_word_counts_counts_body_words():
+    entries = [
+        _entry("2026-06-02", body="three little words"),
+        _entry("2026-06-01", body=""),
+    ]
+    assert journal.word_counts(entries, None, None) == [
+        {"date": "2026-06-01", "count": 0},
+        {"date": "2026-06-02", "count": 3},
+    ]
+
+
+def test_entry_gaps_between_consecutive_dates():
+    entries = [_entry("2026-06-01"), _entry("2026-06-02"), _entry("2026-06-06")]
+    assert journal.entry_gaps(entries, None, None) == [
+        {"gap_days": 1, "after_date": "2026-06-02"},
+        {"gap_days": 4, "after_date": "2026-06-06"},
+    ]
+
+
+def test_creation_hours_histogram():
+    entries = [
+        _entry("2026-06-01", created="2026-06-01T09:30:00"),
+        _entry("2026-06-02", created="2026-06-02T09:05:00"),
+        _entry("2026-06-03", created="2026-06-03T22:00:00"),
+    ]
+    hours = journal.creation_hours(entries, None, None)
+    assert hours[9] == 2
+    assert hours[22] == 1
+    assert hours[0] == 0
+    assert len(hours) == 24
+
+
+def test_date_density_presence_per_day():
+    entries = [_entry("2026-06-01"), _entry("2026-06-03")]
+    assert journal.date_density(entries, None, None) == {"2026-06-01": 1, "2026-06-03": 1}

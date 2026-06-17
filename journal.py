@@ -574,3 +574,77 @@ def tag_streak(entries, section_id, tag):
             run = 1
     runs.append(run)
     return {"current": runs[-1], "longest": max(runs), "avg": sum(runs) / len(runs)}
+
+
+_DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def numeric_series(entries, section_id, start, end):
+    """[{date, value}] of one numeric section's recorded values, sorted by date."""
+    out = [
+        {"date": e["date"], "value": (e.get("numbers") or {})[section_id]}
+        for e in _filter_entries_by_date(entries, start, end)
+        if section_id in (e.get("numbers") or {})
+    ]
+    out.sort(key=lambda d: d["date"])
+    return out
+
+
+def dow_averages(entries, section_id, start, end):
+    """{weekday_name: mean value | None} for one numeric section, Mon..Sun."""
+    buckets = {i: [] for i in range(7)}
+    for e in _filter_entries_by_date(entries, start, end):
+        nums = e.get("numbers") or {}
+        if section_id in nums:
+            d = datetime.strptime(e["date"], "%Y-%m-%d").date()
+            buckets[d.weekday()].append(nums[section_id])
+    return {
+        _DOW_NAMES[i]: (sum(v) / len(v) if v else None)
+        for i, v in buckets.items()
+    }
+
+
+def word_counts(entries, start, end):
+    """[{date, count}] of body word counts (whitespace split), sorted by date."""
+    out = [
+        {"date": e["date"], "count": len((e.get("body") or "").split())}
+        for e in _filter_entries_by_date(entries, start, end)
+    ]
+    out.sort(key=lambda d: d["date"])
+    return out
+
+
+def entry_gaps(entries, start, end):
+    """[{gap_days, after_date}] day-gaps between consecutive entry dates."""
+    dates = sorted({
+        e["date"] for e in _filter_entries_by_date(entries, start, end)
+        if e.get("date")
+    })
+    parsed = [datetime.strptime(d, "%Y-%m-%d").date() for d in dates]
+    return [
+        {"gap_days": (parsed[i] - parsed[i - 1]).days, "after_date": dates[i]}
+        for i in range(1, len(parsed))
+    ]
+
+
+def creation_hours(entries, start, end):
+    """{0..23: count} histogram of entry `created` timestamps' hour."""
+    out = {h: 0 for h in range(24)}
+    for e in _filter_entries_by_date(entries, start, end):
+        created = e.get("created")
+        if not created:
+            continue
+        try:
+            out[datetime.fromisoformat(created).hour] += 1
+        except ValueError:
+            continue
+    return out
+
+
+def date_density(entries, start, end):
+    """{date: 1} for every day that has an entry (calendar heatmap presence)."""
+    return {
+        e["date"]: 1
+        for e in _filter_entries_by_date(entries, start, end)
+        if e.get("date")
+    }
