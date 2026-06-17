@@ -510,3 +510,67 @@ def describe(values):
         "max": max(vals),
         "count": n,
     }
+
+
+def _tags_for(entry, section_id):
+    """The tag-name list this entry recorded for `section_id` (possibly empty)."""
+    return (entry.get("tags") or {}).get(section_id, []) or []
+
+
+def tag_frequency(entries, section_id, start, end):
+    """{tag: count} across date-filtered entries for one section."""
+    out = {}
+    for e in _filter_entries_by_date(entries, start, end):
+        for tag in _tags_for(e, section_id):
+            out[tag] = out.get(tag, 0) + 1
+    return out
+
+
+def tag_cooccurrence(entries, section_id, start, end):
+    """{tag: {other_tag: count}} of tags appearing together on the same entry,
+    within one section. Symmetric; self-pairs excluded."""
+    out = {}
+    for e in _filter_entries_by_date(entries, start, end):
+        tags = sorted(set(_tags_for(e, section_id)))
+        for a in tags:
+            for b in tags:
+                if a == b:
+                    continue
+                out.setdefault(a, {})
+                out[a][b] = out[a].get(b, 0) + 1
+    return out
+
+
+def tag_trend(entries, section_id, tag, start, end):
+    """[{week, count}] of a single tag's frequency per ISO week, sorted."""
+    weeks = {}
+    for e in _filter_entries_by_date(entries, start, end):
+        if tag in _tags_for(e, section_id):
+            d = datetime.strptime(e["date"], "%Y-%m-%d").date()
+            iso = d.isocalendar()
+            key = f"{iso[0]}-W{iso[1]:02d}"
+            weeks[key] = weeks.get(key, 0) + 1
+    return [{"week": k, "count": weeks[k]} for k in sorted(weeks)]
+
+
+def tag_streak(entries, section_id, tag):
+    """{current, longest, avg} over consecutive-day runs where `tag` appears.
+    `current` is the run ending at the latest tagged day; `avg` is the mean run
+    length. All zero when the tag never appears."""
+    dates = sorted({
+        e["date"] for e in entries
+        if e.get("date") and tag in _tags_for(e, section_id)
+    })
+    if not dates:
+        return {"current": 0, "longest": 0, "avg": 0}
+    parsed = [datetime.strptime(d, "%Y-%m-%d").date() for d in dates]
+    runs = []
+    run = 1
+    for i in range(1, len(parsed)):
+        if parsed[i] - parsed[i - 1] == timedelta(days=1):
+            run += 1
+        else:
+            runs.append(run)
+            run = 1
+    runs.append(run)
+    return {"current": runs[-1], "longest": max(runs), "avg": sum(runs) / len(runs)}
