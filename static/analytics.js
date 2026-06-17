@@ -744,8 +744,12 @@
       var xSpan = xMax - xMin || 1, ySpan = yMax - yMin || 1;
       U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 4, c);
       pairs.forEach(function (p) {
-        var x = pad + (w - pad - 10) * ((p.x - xMin) / xSpan);
-        var y = 10 + (h - pad - 10) * (1 - (p.y - yMin) / ySpan);
+        var x = (xMax - xMin) === 0
+          ? pad + (w - pad - 10) / 2
+          : pad + (w - pad - 10) * ((p.x - xMin) / xSpan);
+        var y = (yMax - yMin) === 0
+          ? 10 + (h - pad - 10) / 2
+          : 10 + (h - pad - 10) * (1 - (p.y - yMin) / ySpan);
         U.drawDot(svg, x, y, 3, U.colorMix(sx.color, 80));
       });
       U.text(svg, w / 2, h - 2, sx.name + " (x)  vs  " + sy.name + " (y)", c.muted,
@@ -792,7 +796,7 @@
       var pct = sections.length
         ? U.describe(coveredCounts.map(function (n) { return (n / sections.length) * 100; })).mean
         : null;
-      U.statsRow(container, [["mean sections filled", U.fmt(pct) + "%"]]);
+      U.statsRow(container, [["mean sections filled", pct != null ? U.fmt(pct) + "%" : null]]);
     },
   });
 
