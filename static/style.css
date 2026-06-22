@@ -71,6 +71,21 @@ nav a:hover {
   border-bottom-color: var(--accent);
 }
 
+/* Search sits at the far right of the nav as a yellow oval pill that fills
+   on hover. Full border (overrides the bottom-border-only nav link style). */
+nav a.nav-search {
+  padding: 0.25rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+nav a.nav-search:hover {
+  background-color: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
 /* The brand mascot is the clickable toggle that switches Tasks <-> Journal,
    with a directional caption ("journal ->" / "todo ->") stacked beneath it. */
 .brand-toggle {
@@ -509,10 +524,56 @@ h2 {
   background: var(--panel); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 0.55rem 0.7rem; font: inherit;
 }
+
+/* ----- rich body field (click-to-edit) -----
+   The textarea and its rendered view must share font/size/line-height/padding/
+   min-height so the focus<->blur swap doesn't shift layout. The textarea margin
+   above is dropped here; the wrapper owns the spacing instead. */
+.body-field { margin-bottom: 1.2rem; }
+.body-field .body-input { margin-bottom: 0; }
+.body-rendered {
+  width: 100%; min-height: 140px; box-sizing: border-box;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.55rem 0.7rem; font: inherit;
+  line-height: inherit; white-space: pre-wrap; word-wrap: break-word;
+  cursor: text;
+}
+/* The `hidden` attribute needs an explicit rule when a display rule is present
+   (same gotcha already handled for .difficulty-picker / .task-details). */
+.body-rendered[hidden] { display: none; }
+.body-rendered strong, .body-rendered b { font-weight: 700; }
+.body-rendered em, .body-rendered i { font-style: italic; }
+.body-rendered u { text-decoration: underline; }
+.body-rendered s, .body-rendered del { text-decoration: line-through; }
+/* Mention highlight: translucent section-color tint, like .title-highlight. */
+.mention-highlight {
+  background: color-mix(in srgb, var(--tag-bg, transparent) 35%, transparent);
+  color: var(--text);
+  padding: 0 0.2em;
+  border-radius: 3px;
+}
 .label {
   font-size: 0.72rem; letter-spacing: 1px; text-transform: uppercase;
   color: var(--muted); margin: 0 0 0.5rem;
 }
+
+/* Mood quick-pick: label left, seven Pompompurin GIFs right-justified. */
+.mood-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin-bottom: 0.5rem;
+}
+/* Label drops to the row's bottom so its gap to the textbox matches the
+   "Tag the day" label's gap, even though the taller GIFs stretch the row.
+   The picker stays centered (align-items: center on .mood-row) — GIFs unmoved. */
+.mood-row .label { margin: 0; align-self: flex-end; }
+.mood-picker { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; }
+.mood-opt {
+  background: none; border: none; padding: 0; cursor: pointer; line-height: 0;
+  transition: opacity 0.15s ease;
+}
+.mood-opt img { height: 42px; width: auto; display: block; }
+/* When a mood is chosen, dim the unselected GIFs. No ring/outline/scale. */
+.mood-picker.has-selection .mood-opt:not(.selected) { opacity: 0.4; }
 
 /* two-column section grid (tag + numeric) */
 .sections { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin-bottom: 1rem; }
@@ -534,16 +595,11 @@ h2 {
   border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.6rem;
   font-size: 0.82rem; cursor: pointer; user-select: none;
 }
-/* Two-tone check circle (these sit on tinted chips): a dark outer ring and a
-   lighter inner circle that turns green when selected. Overrides the tag-page
-   white ring here. Flex on the chip keeps it centered with the label text. */
+/* Same circle as the task-list checkboxes (white ring, dark-grey center, green
+   when checked) inherited from .tag-toggle above -- just smaller (13px). Flex on
+   the chip keeps it centered with the label text. */
 .section .chip input[type="checkbox"] {
   margin: 0;
-  border-color: #2a2e37;        /* outer ring -- sits well against the page bg */
-  background-color: #cdd2da;     /* lighter inner circle */
-}
-.section .chip input[type="checkbox"]:checked {
-  background-color: #3fae5a;     /* turns green when clicked */
 }
 .section .chip:has(input:checked) {
   background: color-mix(in srgb, var(--tag-bg) 22%, transparent);
@@ -783,10 +839,13 @@ h2 {
   gap: 0.3rem;
 }
 
+/* Each chip is tinted with its tag's own section color (highlighter style):
+   a translucent wash of --tag-bg over the dark theme, light text on top.
+   Falls back to the accent when a tag has no section color. */
 .entry-tag-chip {
   font-size: 0.72rem;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--tag-bg, var(--accent)) 30%, transparent);
+  color: var(--text);
   border-radius: 999px;
   padding: 0.1rem 0.45rem;
   white-space: nowrap;
@@ -1306,14 +1365,21 @@ input[type="number"]::-webkit-inner-spin-button {
 .section-block:last-child { margin-bottom: 0; }
 
 /* ----- task difficulty picker (active list) ----- */
+/* Full-width so it wraps onto its own line directly below the task row,
+   indented to line up under the title (past the checkbox + its gap). */
 .difficulty-picker {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-left: 0.5rem;
+  gap: 0.5rem;
+  flex-basis: 100%;
+  width: 100%;
+  padding-left: calc(18px + 0.6rem);
   font-size: 0.78rem;
 }
+/* display:flex above overrides the UA [hidden]{display:none}; restore it so
+   the picker stays hidden until the task checkbox reveals it. */
+.difficulty-picker[hidden] { display: none; }
 /* Subtle reveal once the task is checked (the [hidden] attr is removed in JS). */
 .difficulty-picker:not([hidden]) {
   animation: difficulty-reveal 0.15s ease-out;
@@ -1323,16 +1389,178 @@ input[type="number"]::-webkit-inner-spin-button {
   to { opacity: 1; }
 }
 .difficulty-prompt { color: var(--muted); }
-.kind-toggle-opt {
+.difficulty-opt {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.3rem;
   color: var(--muted);
   cursor: pointer;
 }
-.kind-toggle-opt input { accent-color: var(--accent); }
-.kind-toggle-opt:hover { color: var(--accent); }
+.difficulty-opt:hover { color: var(--accent); }
+
+/* Difficulty circles mirror .task-check (white ring, dark center, green when
+   selected) but a touch smaller to sit visually below the task checkbox. */
+.difficulty-check {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background-color: #3a3f4a;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.difficulty-check:checked { background-color: #3fae5a; }
+.difficulty-check:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.difficulty-check:focus { border-color: #ffffff; }
 
 /* ----- archive difficulty control ----- */
 .difficulty-form { display: inline; }
 .difficulty-select { font-size: 0.78rem; padding: 0.15rem 0.4rem; }
+
+/* --------------------------------------------------------------------------- */
+/* Task notes + subtasks dropdown                                              */
+/* --------------------------------------------------------------------------- */
+
+/* The title becomes a click target that expands the details dropdown. */
+.task-title-toggle { cursor: pointer; }
+
+/* Collapsed hint + subtask progress count -- muted and small. */
+.detail-hint,
+.subtask-progress {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-left: 0.4rem;
+}
+
+/* Full-width dropdown beneath the task row, aligned under the title (past the
+   task checkbox like the difficulty picker). */
+.task-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-basis: 100%;
+  width: 100%;
+  padding-left: calc(18px + 0.6rem);
+  margin-top: 0.2rem;
+}
+/* display:flex above overrides the UA [hidden]{display:none}; restore it so the
+   dropdown stays collapsed until the title click reveals it (same gotcha as
+   .difficulty-picker). */
+.task-details[hidden] { display: none; }
+
+.task-notes {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background-color: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+}
+
+.task-notes-readonly {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.subtask-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Square clone of .task-check: white border, dark center, green when checked,
+   amber hover outline -- just rounded-square and slightly smaller. */
+.subtask-check {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  margin: 0;
+  border-radius: 3px;
+  border: 2px solid #ffffff;
+  background-color: #3a3f4a;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.subtask-check:checked { background-color: #3fae5a; }
+.subtask-check:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.subtask-check:focus { border-color: #ffffff; }
+.subtask-check:disabled { cursor: default; opacity: 0.9; }
+
+.subtask-text {
+  flex: 1;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background-color: var(--panel);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+}
+.subtask-text:hover { border-color: var(--border); }
+.subtask-text:focus { border-color: var(--accent); }
+
+.subtask-text-readonly { font-size: 0.85rem; color: var(--text); }
+
+.subtask-del {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+.subtask-del:hover { color: var(--danger); }
+
+.subtask-add-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.subtask-add {
+  flex: 1;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background-color: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+.subtask-add:focus { border-color: var(--accent); }
+.subtask-add-btn {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+}

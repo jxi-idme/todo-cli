@@ -67,6 +67,78 @@ def set_difficulty(data, task_id, difficulty):
     return data
 
 
+# --------------------------------------------------------------------------- #
+# Task notes + subtasks (active bucket only; subtasks addressed by list index)
+# --------------------------------------------------------------------------- #
+
+def _active_task(data, task_id):
+    """Return the active task with `task_id`, or None. Helper for the
+    notes/subtask mutators -- these operate on the active bucket only."""
+    for t in data.get("active", []):
+        if t.get("id") == task_id:
+            return t
+    return None
+
+
+def set_task_notes(data, task_id, text):
+    """Set an active task's `notes` to the stripped `text` (may be ""). An empty
+    string clears the notes. Unknown id = no-op. Returns `data`."""
+    task = _active_task(data, task_id)
+    if task is not None:
+        task["notes"] = (text or "").strip()
+    return data
+
+
+def add_subtask(data, task_id, text):
+    """Append {"text": <stripped>, "done": False} to an active task's subtasks.
+    Raises ValueError on empty/whitespace text. Unknown id = no-op. Returns
+    `data`."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Subtask text must not be empty")
+    task = _active_task(data, task_id)
+    if task is not None:
+        task.setdefault("subtasks", []).append({"text": text, "done": False})
+    return data
+
+
+def toggle_subtask(data, task_id, index):
+    """Flip the `done` flag of the subtask at `index` on an active task.
+    Out-of-range index or unknown id = no-op. Returns `data`."""
+    task = _active_task(data, task_id)
+    if task is not None:
+        subs = task.get("subtasks") or []
+        if 0 <= index < len(subs):
+            subs[index]["done"] = not subs[index].get("done", False)
+    return data
+
+
+def edit_subtask(data, task_id, index, text):
+    """Replace the text of the subtask at `index` with the stripped `text`.
+    Raises ValueError on empty text. Out-of-range index or unknown id = no-op.
+    Returns `data`."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Subtask text must not be empty")
+    task = _active_task(data, task_id)
+    if task is not None:
+        subs = task.get("subtasks") or []
+        if 0 <= index < len(subs):
+            subs[index]["text"] = text
+    return data
+
+
+def delete_subtask(data, task_id, index):
+    """Remove the subtask at `index` from an active task. Out-of-range index or
+    unknown id = no-op. Returns `data`."""
+    task = _active_task(data, task_id)
+    if task is not None:
+        subs = task.get("subtasks") or []
+        if 0 <= index < len(subs):
+            del subs[index]
+    return data
+
+
 def _valid_recurrence(recurrence):
     """True if `recurrence` is a recognized recurrence value (or None)."""
     if recurrence is None:
@@ -450,6 +522,8 @@ def add_task(data, title, due=None, recurrence=None, now=None, tags=None):
         "recurrence": recurrence or None,
         "created": now.isoformat(),
         "tags": _normalize_tags(tags),
+        "notes": "",
+        "subtasks": [],
     }
     data["active"].append(task)
     return data
@@ -524,6 +598,11 @@ def _spawn_next(task, due_iso, now):
     """
     if not due_iso:
         return None
+    # Carry notes + subtask text forward; reset every subtask's done flag to
+    # False so the next occurrence starts fresh. Deep-copy the dicts so the
+    # spawned task and the archived/expired one never share subtask objects.
+    subtasks = [{"text": s.get("text", ""), "done": False}
+                for s in (task.get("subtasks") or [])]
     return {
         "id": uuid.uuid4().hex,
         "title": task["title"],
@@ -531,6 +610,8 @@ def _spawn_next(task, due_iso, now):
         "recurrence": task.get("recurrence"),
         "created": now.isoformat(),
         "tags": list(task.get("tags") or []),
+        "notes": task.get("notes", ""),
+        "subtasks": subtasks,
     }
 
 

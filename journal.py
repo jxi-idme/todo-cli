@@ -15,6 +15,7 @@ local time, matching todo.py.
 import json
 import math
 import os
+import re
 import statistics
 import uuid
 from collections import Counter
@@ -82,6 +83,7 @@ def load(path):
                 e["tags"] = {}
             if not isinstance(e.get("numbers"), dict):
                 e["numbers"] = {}
+            e.setdefault("mood", None)
         return parsed
     _backup(path)
     return _seeded()
@@ -310,6 +312,24 @@ def _valid_date(date_str):
         return False
 
 
+def _valid_mood(value):
+    """True if `value` is an int (or int-coercible) in the 1..7 range.
+
+    Rejects floats with a fractional part, bools, and non-numeric strings —
+    the mood is a discrete 1..7 scale, so only whole-number values are valid.
+    """
+    if isinstance(value, bool):
+        return False
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return False
+    # An int-coercible value must equal its int form (e.g. reject 3.5).
+    if isinstance(value, float) and not value.is_integer():
+        return False
+    return 1 <= n <= 7
+
+
 def get_entry_by_date(data, date):
     """The entry for `date`, or None (date is the unique key)."""
     for e in data.get("entries", []):
@@ -327,7 +347,7 @@ def entries_sorted(data):
 # Task 6: Entry upsert & delete
 # --------------------------------------------------------------------------- #
 
-def upsert_entry(data, date, title, body, tags=None, numbers=None, now=None):
+def upsert_entry(data, date, title, body, tags=None, numbers=None, mood=None, now=None):
     """Create or update the entry for `date` (the unique key).
 
     `tags` is {section_id: [tag names]} and `numbers` is {section_id: value};
@@ -370,12 +390,22 @@ def upsert_entry(data, date, title, body, tags=None, numbers=None, now=None):
             raise ValueError(f"Invalid number for section {section_id!r}: {value!r}")
         clean_numbers[section_id] = v
 
+    # Mood is an optional 1..7 scale, independent of the section structures.
+    # None/empty -> null; an int-coercible 1..7 -> int; anything else -> raise.
+    if mood is None or mood == "":
+        clean_mood = None
+    elif _valid_mood(mood):
+        clean_mood = int(mood)
+    else:
+        raise ValueError(f"Invalid mood: {mood!r}")
+
     existing = get_entry_by_date(data, date)
     if existing is not None:
         existing["title"] = title
         existing["body"] = body
         existing["tags"] = clean_tags
         existing["numbers"] = clean_numbers
+        existing["mood"] = clean_mood
         existing["updated"] = now.isoformat()
         return existing
 
@@ -388,6 +418,7 @@ def upsert_entry(data, date, title, body, tags=None, numbers=None, now=None):
         "updated": now.isoformat(),
         "tags": clean_tags,
         "numbers": clean_numbers,
+        "mood": clean_mood,
     }
     data.setdefault("entries", []).append(entry)
     return entry
@@ -397,6 +428,102 @@ def delete_entry(data, entry_id):
     """Remove an entry by id. Unknown id = no-op."""
     data["entries"] = [e for e in data.get("entries", []) if e.get("id") != entry_id]
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Rich entries: @mention tag lookup, extraction, and merge (all pure)
+# --------------------------------------------------------------------------- #
+
+# A mention token: '@' at a word boundary (start of string or a non-word char
+# before it) followed by one or more name chars. The leading boundary group is
+# captured so `a@b.com` does NOT match (the char before '@' is a word char).
+_MENTION_RE = re.compile(r"(?:^|(?<=\W))@([A-Za-z0-9_-]+)")
+
+
+def tag_section_index(data):
+    """Build the @mention lookup: {normalized_name: section_id}.
+
+    Construction + precedence:
+      1. Seed with permanent (`section.tags`) + archived (`section.archived_tags`)
+         tags from every section. A registered name's section always wins, so
+         these authoritative "homes" are never overridden by temporary use.
+      2. Overlay temporary tags harvested from entries -- any name NOT already
+         registered is mapped to the section it was used under. Entries are
+         iterated in ASCENDING date order so that, for a purely-temporary name
+         used under more than one section, the most-recent entry's section wins.
+
+    Names are normalized (strip + lowercase).
+    """
+    index = {}
+    registered = set()
+    for s in data.get("sections", []):
+        sid = s.get("id")
+        for name in (s.get("tags") or []) + (s.get("archived_tags") or []):
+            n = _normalize_name(name)
+            if n:
+                index[n] = sid
+                registered.add(n)
+
+    entries = sorted(data.get("entries", []), key=lambda e: e.get("date", ""))
+    for e in entries:
+        for sid, names in (e.get("tags") or {}).items():
+            for name in names or []:
+                n = _normalize_name(name)
+                if n and n not in registered:
+                    index[n] = sid  # later (more recent) entries overwrite
+    return index
+
+
+def _resolve_mention(token, index):
+    """Resolve a mention token to a known tag name in `index`, or None.
+
+    Tries the token as-is (normalized), then with underscores treated as
+    spaces — so `@alex_dad` matches a multi-word tag `alex dad`. A literal
+    underscore tag wins over the spaced form when both exist.
+    """
+    direct = _normalize_name(token)
+    if direct in index:
+        return direct
+    spaced = _normalize_name(token.replace("_", " "))
+    if spaced in index:
+        return spaced
+    return None
+
+
+def extract_mentions(body, index):
+    """Find @mentions in `body` that match a known tag.
+
+    Returns {section_id: [names]}. A mention is an '@' at a word boundary
+    followed by [A-Za-z0-9_-]+ (so `a@b.com` does not match). Each token is
+    resolved to a known tag name (underscores match spaces, so `@alex_dad`
+    matches `alex dad`); unknown tokens are dropped. Resolved names are grouped
+    by section id and deduped within a section, preserving first-seen order.
+    """
+    out = {}
+    for raw in _MENTION_RE.findall(body or ""):
+        n = _resolve_mention(raw, index)
+        if n is None:
+            continue
+        sid = index[n]
+        names = out.setdefault(sid, [])
+        if n not in names:
+            names.append(n)
+    return out
+
+
+def merge_entry_tags(base, mentions):
+    """Union two {section_id: [names]} dicts, non-destructively.
+
+    For each section id, concatenate names and dedupe preserving order. Never
+    removes anything; does not mutate the inputs.
+    """
+    out = {sid: list(names) for sid, names in (base or {}).items()}
+    for sid, names in (mentions or {}).items():
+        merged = out.setdefault(sid, [])
+        for n in names or []:
+            if n not in merged:
+                merged.append(n)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -416,21 +543,31 @@ def search_index(data):
     """Per-entry payload for the client-side search tab (newest date first).
 
     Each item: id, date, title, body, `tags` (flat sorted unique list of every
-    tag string on the entry, across all sections), and `numbers`
+    tag string on the entry, across all sections — used by the JS filter),
+    `tag_chips` (sorted unique [{name, color}] pairs carrying each tag's own
+    section color, for color-coded rendering), and `numbers`
     ({section_id: value}). Designed to be JSON-serialized into the page.
     """
     out = []
     for e in entries_sorted(data):
         tags = set()
-        for names in (e.get("tags") or {}).values():
+        chips = []          # [{name, color}], deduped by name (first wins)
+        seen = set()
+        for sid, names in (e.get("tags") or {}).items():
+            color = section_color(data, sid)
             for n in names or []:
                 tags.add(n)
+                if n not in seen:
+                    seen.add(n)
+                    chips.append({"name": n, "color": color})
+        chips.sort(key=lambda c: c["name"])
         out.append({
             "id": e["id"],
             "date": e["date"],
             "title": e.get("title", ""),
             "body": e.get("body", ""),
             "tags": sorted(tags),
+            "tag_chips": chips,
             "numbers": dict(e.get("numbers") or {}),
         })
     return out

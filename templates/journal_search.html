@@ -8,9 +8,9 @@
 {% endblock %}
 {% block nav %}
   <a href="{{ url_for('journal_today') }}">New entry</a>
-  <a href="{{ url_for('journal_search') }}">Search</a>
   <a href="{{ url_for('journal_analytics') }}">Analytics</a>
-  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+  <a href="{{ url_for('journal_sections') }}">Manage</a>
+  <a class="nav-search" href="{{ url_for('journal_search') }}">Search</a>
 {% endblock %}
 {% block content %}
   <div class="search-panel">
@@ -81,10 +81,10 @@
             <span class="entry-date">{{ e.date }}</span>
             <span class="entry-title">{{ e.title }}</span>
           </a>
-          {% if e.tags %}
+          {% if e.tag_chips %}
             <span class="entry-tags">
-              {% for tag in e.tags %}
-                <span class="entry-tag-chip">{{ tag }}</span>
+              {% for chip in e.tag_chips %}
+                <span class="entry-tag-chip" style="--tag-bg: {{ chip.color }};">{{ chip.name }}</span>
               {% endfor %}
             </span>
           {% endif %}

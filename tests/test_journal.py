@@ -312,6 +312,87 @@ def test_upsert_accepts_archived_section_id_for_tag():
     assert e["tags"] == {section_id: ["maya"]}
 
 
+# --------------------------------------------------------------------------- #
+# Mood quick-pick (1..7, optional, top-level entry field)
+# --------------------------------------------------------------------------- #
+
+def test_upsert_stores_valid_mood_on_create():
+    data = journal._empty()
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", mood=5, now=NOW)
+    assert e["mood"] == 5
+
+
+def test_upsert_stores_valid_mood_on_update():
+    data = journal._empty()
+    journal.upsert_entry(data, "2026-06-15", "t", "", mood=2, now=NOW)
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", mood=6, now=NOW)
+    assert len(data["entries"]) == 1
+    assert e["mood"] == 6
+
+
+def test_upsert_coerces_int_like_mood():
+    data = journal._empty()
+    e = journal.upsert_entry(data, "2026-06-15", "t", "", mood="4", now=NOW)
+    assert e["mood"] == 4 and isinstance(e["mood"], int)
+
+
+def test_upsert_mood_none_or_omitted_stores_null():
+    data = journal._empty()
+    e1 = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
+    assert e1["mood"] is None
+    e2 = journal.upsert_entry(data, "2026-06-16", "t", "", mood=None, now=NOW)
+    assert e2["mood"] is None
+    e3 = journal.upsert_entry(data, "2026-06-17", "t", "", mood="", now=NOW)
+    assert e3["mood"] is None
+
+
+def test_upsert_rejects_out_of_range_mood():
+    data = journal._empty()
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-15", "t", "", mood=0, now=NOW)
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-16", "t", "", mood=8, now=NOW)
+
+
+def test_upsert_rejects_non_int_mood():
+    data = journal._empty()
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-15", "t", "", mood="abc", now=NOW)
+    with pytest.raises(ValueError):
+        journal.upsert_entry(data, "2026-06-16", "t", "", mood=3.5, now=NOW)
+
+
+def test_upsert_mood_preserved_when_not_passed_then_changed_then_cleared():
+    data = journal._empty()
+    journal.upsert_entry(data, "2026-06-15", "t", "", mood=3, now=NOW)
+    # Re-passing the same mood keeps it; a new value replaces it.
+    changed = journal.upsert_entry(data, "2026-06-15", "t", "", mood=7, now=NOW)
+    assert changed["mood"] == 7
+    # Clearing it (None) stores null.
+    cleared = journal.upsert_entry(data, "2026-06-15", "t", "", mood=None, now=NOW)
+    assert cleared["mood"] is None
+
+
+def test_load_migrates_missing_mood(tmp_path):
+    path = tmp_path / "journal.json"
+    path.write_text(json.dumps({
+        "sections": [],
+        "entries": [{"id": "e", "date": "2026-06-15", "title": "t", "body": "",
+                     "tags": {}, "numbers": {}}],
+    }), encoding="utf-8")
+    data = journal.load(str(path))
+    assert data["entries"][0]["mood"] is None
+
+
+def test_valid_mood_helper():
+    assert journal._valid_mood(1) and journal._valid_mood(7)
+    assert journal._valid_mood("4")
+    assert not journal._valid_mood(0)
+    assert not journal._valid_mood(8)
+    assert not journal._valid_mood("abc")
+    assert not journal._valid_mood(None)
+
+
 def test_delete_entry():
     data = journal._empty()
     e = journal.upsert_entry(data, "2026-06-15", "t", "", now=NOW)
@@ -382,6 +463,22 @@ def test_search_index_shape_and_order():
     older = idx[1]
     assert older["title"] == "old" and older["body"] == "ran in the park"
     assert older["tags"] == ["maya"]
+
+
+def test_search_index_tag_chips_carry_section_color():
+    """tag_chips pair each tag with its own section's color, deduped + sorted."""
+    data = journal._empty()
+    people = journal.add_section(data, "people", "tag", "#aabbcc")
+    food = journal.add_section(data, "food", "tag", "#112233")
+    journal.upsert_entry(data, "2026-06-13", "t", "body",
+                         tags={people["id"]: ["maya"], food["id"]: ["ramen"]},
+                         now=NOW)
+    idx = journal.search_index(data)
+    chips = idx[0]["tag_chips"]
+    assert chips == [
+        {"name": "maya", "color": "#aabbcc"},
+        {"name": "ramen", "color": "#112233"},
+    ]
 
 
 def test_numeric_bounds():
@@ -476,3 +573,151 @@ def test_load_migrates_archived_tags_field(tmp_path):
     )
     data = journal.load(str(path))
     assert data["sections"][0].get("archived_tags") == []
+
+
+# --------------------------------------------------------------------------- #
+# Rich entries: @mention tag-section index
+# --------------------------------------------------------------------------- #
+
+def test_tag_section_index_includes_permanent_and_archived():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "maya")
+    journal.add_section_tag(data, s["id"], "alex")
+    journal.remove_section_tag(data, s["id"], "alex")  # -> archived_tags
+    idx = journal.tag_section_index(data)
+    assert idx["maya"] == s["id"]
+    assert idx["alex"] == s["id"]
+
+
+def test_tag_section_index_harvests_temporary_from_entries():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["zed"]},
+                         now=NOW)
+    idx = journal.tag_section_index(data)
+    # "zed" is only a temporary tag (not in section.tags) but still indexed.
+    assert idx["zed"] == s["id"]
+    assert "zed" not in (s.get("tags") or [])
+
+
+def test_tag_section_index_registered_home_wins_over_temp_use():
+    data = journal._empty()
+    people = journal.add_section(data, "people", "tag", "#fff")
+    work = journal.add_section(data, "work", "tag", "#000")
+    journal.add_section_tag(data, people["id"], "maya")  # registered home
+    # Stray temporary use of "maya" under the work section must NOT win.
+    journal.upsert_entry(data, "2026-06-12", "t", "", tags={work["id"]: ["maya"]},
+                         now=NOW)
+    idx = journal.tag_section_index(data)
+    assert idx["maya"] == people["id"]
+
+
+def test_tag_section_index_most_recent_entry_wins_for_pure_temp():
+    data = journal._empty()
+    a = journal.add_section(data, "alpha", "tag", "#fff")
+    b = journal.add_section(data, "beta", "tag", "#000")
+    # Same purely-temporary name used under two sections on two dates.
+    journal.upsert_entry(data, "2026-06-10", "older", "", tags={a["id"]: ["solo"]},
+                         now=NOW)
+    journal.upsert_entry(data, "2026-06-14", "newer", "", tags={b["id"]: ["solo"]},
+                         now=NOW)
+    idx = journal.tag_section_index(data)
+    assert idx["solo"] == b["id"]  # most-recent date wins
+
+
+def test_tag_section_index_normalizes_names():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "Maya")
+    idx = journal.tag_section_index(data)
+    assert "maya" in idx
+    assert "Maya" not in idx
+
+
+# --------------------------------------------------------------------------- #
+# Rich entries: @mention extraction
+# --------------------------------------------------------------------------- #
+
+def test_extract_mentions_matches_word_boundary():
+    index = {"maya": "S1"}
+    out = journal.extract_mentions("had lunch with @maya today", index)
+    assert out == {"S1": ["maya"]}
+
+
+def test_extract_mentions_ignores_email_like():
+    index = {"b": "S1"}
+    # "@b" inside an email is preceded by a word char -> not a mention.
+    out = journal.extract_mentions("ping a@b.com please", index)
+    assert out == {}
+
+
+def test_extract_mentions_matches_at_start_of_string():
+    index = {"maya": "S1"}
+    out = journal.extract_mentions("@maya said hi", index)
+    assert out == {"S1": ["maya"]}
+
+
+def test_extract_mentions_normalizes_case():
+    index = {"maya": "S1"}
+    out = journal.extract_mentions("saw @Maya", index)
+    assert out == {"S1": ["maya"]}
+
+
+def test_extract_mentions_drops_unknown():
+    index = {"maya": "S1"}
+    out = journal.extract_mentions("met @stranger and @maya", index)
+    assert out == {"S1": ["maya"]}
+
+
+def test_extract_mentions_groups_by_section_and_dedupes():
+    index = {"maya": "S1", "alex": "S1", "paris": "S2"}
+    out = journal.extract_mentions("@maya @alex @maya in @paris", index)
+    assert out == {"S1": ["maya", "alex"], "S2": ["paris"]}
+
+
+def test_extract_mentions_underscore_matches_multiword_tag():
+    # `@alex_dad` resolves to the multi-word tag "alex dad".
+    index = {"alex dad": "S1"}
+    out = journal.extract_mentions("hung with @alex_dad today", index)
+    assert out == {"S1": ["alex dad"]}
+
+
+def test_extract_mentions_literal_underscore_tag_wins():
+    # When both exist, a literal-underscore tag beats the spaced form.
+    index = {"alex_dad": "S1", "alex dad": "S2"}
+    out = journal.extract_mentions("@alex_dad", index)
+    assert out == {"S1": ["alex_dad"]}
+
+
+# --------------------------------------------------------------------------- #
+# Rich entries: tag merge
+# --------------------------------------------------------------------------- #
+
+def test_merge_entry_tags_unions_across_sections():
+    base = {"S1": ["maya"]}
+    mentions = {"S1": ["alex"], "S2": ["paris"]}
+    out = journal.merge_entry_tags(base, mentions)
+    assert out == {"S1": ["maya", "alex"], "S2": ["paris"]}
+
+
+def test_merge_entry_tags_dedupes_preserving_order():
+    base = {"S1": ["maya", "alex"]}
+    mentions = {"S1": ["alex", "zed"]}
+    out = journal.merge_entry_tags(base, mentions)
+    assert out == {"S1": ["maya", "alex", "zed"]}
+
+
+def test_merge_entry_tags_does_not_mutate_inputs():
+    base = {"S1": ["maya"]}
+    mentions = {"S1": ["alex"]}
+    journal.merge_entry_tags(base, mentions)
+    assert base == {"S1": ["maya"]}
+    assert mentions == {"S1": ["alex"]}
+
+
+def test_merge_entry_tags_is_non_destructive():
+    base = {"S1": ["maya"]}
+    mentions = {}
+    out = journal.merge_entry_tags(base, mentions)
+    assert out == {"S1": ["maya"]}

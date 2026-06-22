@@ -62,13 +62,21 @@
           <li class="task">
             <input type="checkbox" class="task-check" name="completed" value="{{ task.id }}">
             {% set tags = task.tags or [] %}
+            {% set subtasks = task.subtasks or [] %}
+            {% set notes = task.notes or "" %}
+            {% set has_details = notes or subtasks %}
+            {% set done_count = subtasks | selectattr("done") | list | length %}
+            {# The title is a click target that toggles the details dropdown. #}
             {% if tags %}
               {# First tag drives the title highlight. The inner span carries
                  the translucent highlight so it hugs only the text, while the
                  outer .title keeps its flex sizing in the row. #}
               {% set hl = tag_color(data, tags[0]) %}
-              <span class="title"><span class="title-highlight"
-                    style="--tag-bg: {{ hl }};">{{ task.title }}</span></span>
+              <span class="title task-title-toggle" data-task-id="{{ task.id }}"
+                    role="button" tabindex="0"><span class="title-highlight"
+                    style="--tag-bg: {{ hl }};">{{ task.title }}</span>{% if has_details %}<span
+                    class="detail-hint">&hellip;</span>{% endif %}{% if subtasks %}<span
+                    class="subtask-progress">{{ done_count }}/{{ subtasks | length }}</span>{% endif %}</span>
               {# Any additional tags render as small chips after the title. #}
               {% for name in tags[1:] %}
                 {% set c = tag_color(data, name) %}
@@ -76,7 +84,10 @@
                       style="--tag-bg: {{ c }}; --tag-fg: {{ text_color_for(c) }};">{{ name }}</span>
               {% endfor %}
             {% else %}
-              <span class="title">{{ task.title }}</span>
+              <span class="title task-title-toggle" data-task-id="{{ task.id }}"
+                    role="button" tabindex="0">{{ task.title }}{% if has_details %}<span
+                    class="detail-hint">&hellip;</span>{% endif %}{% if subtasks %}<span
+                    class="subtask-progress">{{ done_count }}/{{ subtasks | length }}</span>{% endif %}</span>
             {% endif %}
             {% if task.recurrence %}
               <span class="recur-tag">&#8635; {{ task.recurrence }}</span>
@@ -94,13 +105,36 @@
                Optional: no option is selected by default. #}
             <span class="difficulty-picker" hidden>
               <span class="difficulty-prompt">difficulty:</span>
-              <label class="kind-toggle-opt"><input type="radio"
+              <label class="difficulty-opt"><input type="radio" class="difficulty-check"
                      name="difficulty:{{ task.id }}" value="easy"> easy</label>
-              <label class="kind-toggle-opt"><input type="radio"
+              <label class="difficulty-opt"><input type="radio" class="difficulty-check"
                      name="difficulty:{{ task.id }}" value="medium"> medium</label>
-              <label class="kind-toggle-opt"><input type="radio"
+              <label class="difficulty-opt"><input type="radio" class="difficulty-check"
                      name="difficulty:{{ task.id }}" value="hard"> hard</label>
             </span>
+            {# Notes + subtasks dropdown. Hidden until the title is clicked.
+               Inputs carry no `name`, so they never reach /refresh; the JS
+               saves each change via fetch and guards against Enter submitting
+               the surrounding form. #}
+            <div class="task-details" data-task-id="{{ task.id }}" hidden>
+              <textarea class="task-notes" rows="2"
+                        placeholder="Notes&hellip;">{{ notes }}</textarea>
+              <ul class="subtask-list">
+                {% for sub in subtasks %}
+                  <li class="subtask-row" data-index="{{ loop.index0 }}">
+                    <input type="checkbox" class="subtask-check"
+                           {% if sub.done %}checked{% endif %}>
+                    <input type="text" class="subtask-text" value="{{ sub.text }}">
+                    <button type="button" class="subtask-del"
+                            aria-label="delete subtask">&times;</button>
+                  </li>
+                {% endfor %}
+              </ul>
+              <div class="subtask-add-row">
+                <input type="text" class="subtask-add" placeholder="Add subtask&hellip;">
+                <button type="button" class="subtask-add-btn">add</button>
+              </div>
+            </div>
           </li>
         {% endfor %}
       </ul>
@@ -136,4 +170,8 @@
       {% endfor %}
     </section>
   {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='task-details.js') }}" defer></script>
 {% endblock %}

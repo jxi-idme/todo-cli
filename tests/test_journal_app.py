@@ -162,6 +162,58 @@ def test_save_bad_number_aborts_entirely(client):
     assert "cousin lee" not in journal.section_by_id(data, tag_sid)["tags"]
 
 
+def test_save_mood_persists(client):
+    resp = client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", "mood": "4"})
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert journal.get_entry_by_date(data, "2026-06-15")["mood"] == 4
+
+
+def test_save_empty_mood_stores_null(client):
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", "mood": ""})
+    data = journal.load(_journal_path())
+    assert journal.get_entry_by_date(data, "2026-06-15")["mood"] is None
+
+
+def test_save_out_of_range_mood_flashes_not_500(client):
+    resp = client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", "mood": "9"})
+    assert resp.status_code == 302   # graceful flash redirect, not a 500
+    data = journal.load(_journal_path())
+    assert journal.get_entry_by_date(data, "2026-06-15") is None
+
+
+def test_save_non_int_mood_flashes_not_500(client):
+    resp = client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", "mood": "abc"})
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert journal.get_entry_by_date(data, "2026-06-15") is None
+
+
+def test_entry_page_renders_mood_picker(client):
+    resp = client.get("/journal")
+    assert resp.status_code == 200
+    assert b"mood-picker" in resp.data
+    # all seven GIFs present
+    for n in range(1, 8):
+        assert f"{n}-pompom.gif".encode() in resp.data
+
+
+def test_entry_page_preselects_saved_mood(client):
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", "mood": "3"})
+    resp = client.get("/journal/2026-06-15")
+    assert b"has-selection" in resp.data
+    # the data-mood=3 button carries the selected class
+    assert b'class="mood-opt selected"' in resp.data
+    assert b'data-mood="3"' in resp.data
+    # hidden input pre-populated
+    assert b'name="mood"' in resp.data and b'value="3"' in resp.data
+
+
 def test_move_entry_route(client):
     client.post("/journal/save", data={"date": "2026-06-15", "title": "t", "body": ""})
     data = journal.load(_journal_path())
@@ -394,3 +446,77 @@ def test_journal_nav_has_analytics_link(client):
         resp = client.get(path)
         assert resp.status_code == 200
         assert b'href="/journal/analytics"' in resp.data, path
+
+
+# --------------------------------------------------------------------------- #
+# Rich entries: @mention save behavior
+# --------------------------------------------------------------------------- #
+
+def test_save_body_mention_adds_tag_unioned_with_chips(client):
+    """A body mention of an existing tag is added under its section, unioned
+    with any chip selections (purely additive)."""
+    sid = _first_tag_section_id()
+    data = journal.load(_journal_path())
+    journal.add_section_tag(data, sid, "maya")
+    journal.add_section_tag(data, sid, "alex")
+    journal.save(_journal_path(), data)
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "lunch with @alex",
+        f"tag:{sid}": "maya"})
+    e = journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-15")
+    assert set(e["tags"][sid]) == {"maya", "alex"}
+
+
+def test_save_body_mention_non_destructive_on_resave(client):
+    """Removing the mention from prose while the chip stays keeps the tag."""
+    sid = _first_tag_section_id()
+    data = journal.load(_journal_path())
+    journal.add_section_tag(data, sid, "alex")
+    journal.save(_journal_path(), data)
+    # First save: chip + mention both present.
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "saw @alex",
+        f"tag:{sid}": "alex"})
+    # Re-save: mention dropped from body, chip still selected.
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "nothing here",
+        f"tag:{sid}": "alex"})
+    e = journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-15")
+    assert e["tags"][sid] == ["alex"]
+
+
+def test_save_unknown_mention_adds_nothing(client):
+    sid = _first_tag_section_id()
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "met @stranger"})
+    e = journal.get_entry_by_date(journal.load(_journal_path()), "2026-06-15")
+    assert sid not in e.get("tags", {})
+
+
+def test_save_temp_tag_from_prior_entry_is_mentionable_and_stays_temp(client):
+    """A temporary tag used on a prior entry can be mentioned on a new entry,
+    and is added as temporary (not promoted to section.tags)."""
+    sid = _first_tag_section_id()
+    # Prior entry establishes "zed" as a temporary tag.
+    client.post("/journal/save", data={
+        "date": "2026-06-10", "title": "t", "body": "",
+        f"newtag-name:{sid}": "zed", f"newtag-kind:{sid}": "temporary"})
+    # New entry mentions @zed in the body.
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "met @zed again"})
+    data = journal.load(_journal_path())
+    e = journal.get_entry_by_date(data, "2026-06-15")
+    assert "zed" in e["tags"][sid]
+    assert "zed" not in journal.section_by_id(data, sid)["tags"]
+
+
+def test_entry_page_embeds_mention_index(client):
+    data = journal.load(_journal_path())
+    sid = data["sections"][0]["id"]
+    journal.add_section_tag(data, sid, "maya")
+    journal.save(_journal_path(), data)
+    resp = client.get("/journal")
+    assert resp.status_code == 200
+    assert b'id="mention-index"' in resp.data
+    assert b"journal-richtext.js" in resp.data
+    assert b"maya" in resp.data

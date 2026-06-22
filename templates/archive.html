@@ -23,19 +23,29 @@
       {% for task in tasks %}
         <li class="task">
           {% set tags = task.tags or [] %}
+          {% set subtasks = task.subtasks or [] %}
+          {% set notes = task.notes or "" %}
+          {% set has_details = notes or subtasks %}
+          {% set done_count = subtasks | selectattr("done") | list | length %}
           {% if tags %}
             {# First tag drives the title highlight; extra tags become chips --
                exactly like the active page. #}
             {% set hl = tag_color(data, tags[0]) %}
-            <span class="title"><span class="title-highlight"
-                  style="--tag-bg: {{ hl }};">{{ task.title }}</span></span>
+            <span class="title task-title-toggle" data-task-id="{{ task.id }}"
+                  role="button" tabindex="0"><span class="title-highlight"
+                  style="--tag-bg: {{ hl }};">{{ task.title }}</span>{% if has_details %}<span
+                  class="detail-hint">&hellip;</span>{% endif %}{% if subtasks %}<span
+                  class="subtask-progress">{{ done_count }}/{{ subtasks | length }}</span>{% endif %}</span>
             {% for name in tags[1:] %}
               {% set c = tag_color(data, name) %}
               <span class="tag-chip"
                     style="--tag-bg: {{ c }}; --tag-fg: {{ text_color_for(c) }};">{{ name }}</span>
             {% endfor %}
           {% else %}
-            <span class="title">{{ task.title }}</span>
+            <span class="title task-title-toggle" data-task-id="{{ task.id }}"
+                  role="button" tabindex="0">{{ task.title }}{% if has_details %}<span
+                  class="detail-hint">&hellip;</span>{% endif %}{% if subtasks %}<span
+                  class="subtask-progress">{{ done_count }}/{{ subtasks | length }}</span>{% endif %}</span>
           {% endif %}
           <span class="badge">completed {{ task.completed }}</span>
           <form class="difficulty-form" method="post"
@@ -49,6 +59,25 @@
             </select>
           </form>
           <button form="delete-{{ task.id }}" type="submit" class="delete">x</button>
+          {# Read-only details dropdown: same expand/collapse, but notes are
+             static text and subtask checkboxes are disabled. data-readonly
+             tells the shared JS to attach only the expand/collapse handler. #}
+          <div class="task-details" data-task-id="{{ task.id }}" data-readonly hidden>
+            {% if notes %}
+              <p class="task-notes-readonly">{{ notes }}</p>
+            {% endif %}
+            {% if subtasks %}
+              <ul class="subtask-list">
+                {% for sub in subtasks %}
+                  <li class="subtask-row">
+                    <input type="checkbox" class="subtask-check" disabled
+                           {% if sub.done %}checked{% endif %}>
+                    <span class="subtask-text-readonly">{{ sub.text }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </div>
         </li>
       {% endfor %}
     </ul>
@@ -63,4 +92,8 @@
   {% else %}
     <p class="empty">No archived tasks.</p>
   {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='task-details.js') }}" defer></script>
 {% endblock %}

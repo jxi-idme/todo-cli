@@ -261,6 +261,84 @@ def set_task_difficulty(task_id):
     return redirect(url_for("archive"))
 
 
+# --------------------------------------------------------------------------- #
+# Task notes + subtasks (AJAX/JSON endpoints; not Post/Redirect/Get).
+# Each mutating route loads, calls the pure function, saves, and returns the
+# updated slice as JSON so the client can re-render in place.
+# --------------------------------------------------------------------------- #
+
+def _find_active(data, task_id):
+    return next((t for t in data["active"] if t["id"] == task_id), None)
+
+
+@app.route("/task/<task_id>/notes", methods=["POST"])
+def task_notes(task_id):
+    data = todo.load(data_file())
+    if _find_active(data, task_id) is None:
+        return jsonify({"error": "unknown task"}), 404
+    text = (request.get_json(silent=True) or {}).get("text", "")
+    todo.set_task_notes(data, task_id, text)
+    todo.save(data_file(), data)
+    return jsonify({"notes": _find_active(data, task_id)["notes"]})
+
+
+@app.route("/task/<task_id>/subtasks", methods=["POST"])
+def task_add_subtask(task_id):
+    data = todo.load(data_file())
+    if _find_active(data, task_id) is None:
+        return jsonify({"error": "unknown task"}), 404
+    text = (request.get_json(silent=True) or {}).get("text", "")
+    try:
+        todo.add_subtask(data, task_id, text)
+    except ValueError:
+        return jsonify({"error": "subtask text must not be empty"}), 400
+    todo.save(data_file(), data)
+    return jsonify({"subtasks": _find_active(data, task_id)["subtasks"]})
+
+
+@app.route("/task/<task_id>/subtasks/<int:index>/toggle", methods=["POST"])
+def task_toggle_subtask(task_id, index):
+    data = todo.load(data_file())
+    task = _find_active(data, task_id)
+    if task is None:
+        return jsonify({"error": "unknown task"}), 404
+    if not (0 <= index < len(task.get("subtasks") or [])):
+        return jsonify({"error": "subtask index out of range"}), 404
+    todo.toggle_subtask(data, task_id, index)
+    todo.save(data_file(), data)
+    return jsonify({"subtasks": _find_active(data, task_id)["subtasks"]})
+
+
+@app.route("/task/<task_id>/subtasks/<int:index>", methods=["POST"])
+def task_edit_subtask(task_id, index):
+    data = todo.load(data_file())
+    task = _find_active(data, task_id)
+    if task is None:
+        return jsonify({"error": "unknown task"}), 404
+    if not (0 <= index < len(task.get("subtasks") or [])):
+        return jsonify({"error": "subtask index out of range"}), 404
+    text = (request.get_json(silent=True) or {}).get("text", "")
+    try:
+        todo.edit_subtask(data, task_id, index, text)
+    except ValueError:
+        return jsonify({"error": "subtask text must not be empty"}), 400
+    todo.save(data_file(), data)
+    return jsonify({"subtasks": _find_active(data, task_id)["subtasks"]})
+
+
+@app.route("/task/<task_id>/subtasks/<int:index>/delete", methods=["POST"])
+def task_delete_subtask(task_id, index):
+    data = todo.load(data_file())
+    task = _find_active(data, task_id)
+    if task is None:
+        return jsonify({"error": "unknown task"}), 404
+    if not (0 <= index < len(task.get("subtasks") or [])):
+        return jsonify({"error": "subtask index out of range"}), 404
+    todo.delete_subtask(data, task_id, index)
+    todo.save(data_file(), data)
+    return jsonify({"subtasks": _find_active(data, task_id)["subtasks"]})
+
+
 @app.route("/tags", methods=["GET"])
 def tags():
     data = todo.load(data_file())
@@ -297,12 +375,22 @@ def tag_delete(name):
     return redirect(url_for("tags"))
 
 
+def _mention_index(data):
+    """{name: {"section_id": ..., "color": ...}} for client-side mention
+    coloring. Built from journal.tag_section_index + each section's color."""
+    return {
+        name: {"section_id": sid, "color": journal.section_color(data, sid)}
+        for name, sid in journal.tag_section_index(data).items()
+    }
+
+
 def _render_entry(data, date):
     return render_template(
         "journal_entry.html", data=data,
         entry=journal.get_entry_by_date(data, date),
         date=date, sections=journal.active_sections(data),
         entry_dates=journal.entry_dates(data),
+        mention_index=_mention_index(data),
     )
 
 
@@ -379,6 +467,8 @@ def journal_save():
     if not title.strip():
         flash("Could not save entry: a title is required.")
         return redirect(url_for("journal_entry", date=date))
+    mood_raw = request.form.get("mood", "").strip()
+    mood = mood_raw or None   # "" -> None; otherwise let upsert_entry validate
     data = journal.load(journal_file())
     # Preserve any data on archived sections (not shown on the form).
     existing = journal.get_entry_by_date(data, date)
@@ -396,8 +486,12 @@ def journal_save():
                 base_numbers.pop(sid, None)
                 if sid in parsed_numbers:
                     base_numbers[sid] = parsed_numbers[sid]
+        # Union in @mentions from the body (purely additive, non-destructive).
+        idx = journal.tag_section_index(data)
+        mentions = journal.extract_mentions(body, idx)
+        base_tags = journal.merge_entry_tags(base_tags, mentions)
         journal.upsert_entry(data, date, title, body,
-                             tags=base_tags, numbers=base_numbers)
+                             tags=base_tags, numbers=base_numbers, mood=mood)
         journal.save(journal_file(), data)
     except ValueError:
         flash("Could not save entry: check the date, title, tags, and numbers.")

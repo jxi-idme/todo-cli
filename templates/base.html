@@ -23,7 +23,7 @@
           <span class="brand-switch">{{ 'todo' if in_journal else 'journal' }} &rarr;</span>
         </span>
         {% block brand_title %}
-        <span class="site-title">todo&middot;pup</span>
+        <span class="site-title">todo</span>
         {% endblock %}
       </a>
     </div>
@@ -206,6 +206,18 @@
       }
       cb.addEventListener('change', sync);
       sync();
+
+      // Make the radios toggle like the task circle: clicking the already-
+      // selected difficulty deselects it. mousedown records the prior state
+      // (before the browser flips it on), click acts on it.
+      picker.querySelectorAll('.difficulty-check').forEach(function (radio) {
+        radio.addEventListener('mousedown', function () {
+          radio._wasChecked = radio.checked;
+        });
+        radio.addEventListener('click', function () {
+          if (radio._wasChecked) radio.checked = false;
+        });
+      });
     });
 
     // Keep the server alive while this tab is open. When the tab closes,

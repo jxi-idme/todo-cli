@@ -8,9 +8,9 @@
 {% endblock %}
 {% block nav %}
   <a href="{{ url_for('journal_today') }}">New entry</a>
-  <a href="{{ url_for('journal_search') }}">Search</a>
   <a href="{{ url_for('journal_analytics') }}">Analytics</a>
-  <a href="{{ url_for('journal_sections') }}">Manage sections &amp; tags</a>
+  <a href="{{ url_for('journal_sections') }}">Manage</a>
+  <a class="nav-search" href="{{ url_for('journal_search') }}">Search</a>
 {% endblock %}
 {% block content %}
   <form id="journal-form" class="journal-form" method="post" action="{{ url_for('journal_save') }}" novalidate>
@@ -31,8 +31,22 @@
       </div>
     </div>
 
-    <p class="label">What happened today</p>
-    <textarea name="body" placeholder="the day's events…">{{ entry.body if entry else '' }}</textarea>
+    <div class="mood-row">
+      <p class="label">What happened today</p>
+      <div class="mood-picker{{ ' has-selection' if entry and entry.mood else '' }}">
+        {% for n in range(1, 8) %}
+          <button type="button" class="mood-opt{{ ' selected' if entry and entry.mood == n else '' }}"
+                  data-mood="{{ n }}" aria-label="mood {{ n }}">
+            <img src="{{ url_for('static', filename='img/%d-pompom.gif'|format(n)) }}" alt="mood {{ n }}">
+          </button>
+        {% endfor %}
+      </div>
+      <input type="hidden" name="mood" class="mood-input" value="{{ entry.mood if entry and entry.mood else '' }}">
+    </div>
+    <div class="body-field">
+      <textarea name="body" class="body-input" placeholder="the day's events…">{{ entry.body if entry else '' }}</textarea>
+      <div class="body-rendered" hidden></div>
+    </div>
 
     {% set tag_sections = sections | selectattr('type', 'equalto', 'tag') | list %}
     {% set num_sections = sections | selectattr('type', 'equalto', 'numeric') | list %}
@@ -43,7 +57,8 @@
         {% for s in tag_sections %}
           {% set fg = text_color_for(s.color) %}
           {% set selected = entry.tags[s.id] if entry and entry.tags.get(s.id) is not none else [] %}
-          <div class="section" style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
+          <div class="section" data-section-id="{{ s.id }}"
+               style="--tag-bg: {{ s.color }}; --tag-fg: {{ fg }};">
             <h3>{{ s.name }}</h3>
             <div class="chips">
               {# Registered (permanent) tags as toggle chips. #}
@@ -116,5 +131,8 @@
 
 {% block scripts %}
   <script type="application/json" id="entry-dates-data">{{ entry_dates | tojson }}</script>
+  <script type="application/json" id="mention-index">{{ mention_index | tojson }}</script>
   <script src="{{ url_for('static', filename='journal.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='journal-richtext.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='journal-mood.js') }}" defer></script>
 {% endblock %}

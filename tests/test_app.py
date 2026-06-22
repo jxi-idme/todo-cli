@@ -618,3 +618,134 @@ def test_analytics_data_includes_tasks_block(client):
     payload = resp.get_json()
     assert "tasks" in payload
     assert "archive" in payload["tasks"] and "active" in payload["tasks"]
+
+
+# --------------------------------------------------------------------------- #
+# Task notes + subtasks routes
+# --------------------------------------------------------------------------- #
+
+def _add_active(client, title="task one"):
+    client.post("/add", data={"title": title})
+    data = todo.load(_data_path(client))
+    return data["active"][0]["id"]
+
+
+def test_post_task_notes_persists_and_returns_json(client):
+    tid = _add_active(client)
+    resp = client.post(f"/task/{tid}/notes", json={"text": "  hello  "})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"notes": "hello"}
+    data = todo.load(_data_path(client))
+    assert data["active"][0]["notes"] == "hello"
+
+
+def test_post_task_notes_can_clear(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/notes", json={"text": "x"})
+    resp = client.post(f"/task/{tid}/notes", json={"text": ""})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"notes": ""}
+
+
+def test_post_task_notes_unknown_id_404(client):
+    resp = client.post("/task/ghost/notes", json={"text": "x"})
+    assert resp.status_code == 404
+
+
+def test_post_add_subtask_returns_list(client):
+    tid = _add_active(client)
+    resp = client.post(f"/task/{tid}/subtasks", json={"text": "step one"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"subtasks": [{"text": "step one", "done": False}]}
+    data = todo.load(_data_path(client))
+    assert data["active"][0]["subtasks"][0]["text"] == "step one"
+
+
+def test_post_add_subtask_empty_400(client):
+    tid = _add_active(client)
+    resp = client.post(f"/task/{tid}/subtasks", json={"text": "   "})
+    assert resp.status_code == 400
+
+
+def test_post_add_subtask_unknown_id_404(client):
+    resp = client.post("/task/ghost/subtasks", json={"text": "x"})
+    assert resp.status_code == 404
+
+
+def test_post_toggle_subtask(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/subtasks", json={"text": "a"})
+    resp = client.post(f"/task/{tid}/subtasks/0/toggle")
+    assert resp.status_code == 200
+    assert resp.get_json()["subtasks"][0]["done"] is True
+
+
+def test_post_toggle_subtask_bad_index_404(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/subtasks", json={"text": "a"})
+    resp = client.post(f"/task/{tid}/subtasks/9/toggle")
+    assert resp.status_code == 404
+
+
+def test_post_edit_subtask(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/subtasks", json={"text": "old"})
+    resp = client.post(f"/task/{tid}/subtasks/0", json={"text": "new"})
+    assert resp.status_code == 200
+    assert resp.get_json()["subtasks"][0]["text"] == "new"
+
+
+def test_post_edit_subtask_empty_400(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/subtasks", json={"text": "old"})
+    resp = client.post(f"/task/{tid}/subtasks/0", json={"text": "  "})
+    assert resp.status_code == 400
+
+
+def test_post_edit_subtask_bad_index_404(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/subtasks", json={"text": "old"})
+    resp = client.post(f"/task/{tid}/subtasks/9", json={"text": "new"})
+    assert resp.status_code == 404
+
+
+def test_post_delete_subtask(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/subtasks", json={"text": "a"})
+    client.post(f"/task/{tid}/subtasks", json={"text": "b"})
+    resp = client.post(f"/task/{tid}/subtasks/0/delete")
+    assert resp.status_code == 200
+    assert [s["text"] for s in resp.get_json()["subtasks"]] == ["b"]
+
+
+def test_post_delete_subtask_bad_index_404(client):
+    tid = _add_active(client)
+    client.post(f"/task/{tid}/subtasks", json={"text": "a"})
+    resp = client.post(f"/task/{tid}/subtasks/9/delete")
+    assert resp.status_code == 404
+
+
+def test_active_page_renders_title_toggle_and_hint(client):
+    tid = _add_active(client)
+    todo_data = todo.load(_data_path(client))
+    todo.set_task_notes(todo_data, tid, "has notes")
+    todo.add_subtask(todo_data, tid, "a")
+    todo.save(_data_path(client), todo_data)
+    html = client.get("/").get_data(as_text=True)
+    assert "task-title-toggle" in html
+    assert "task-details" in html
+    assert "detail-hint" in html
+    assert "subtask-progress" in html
+
+
+def test_archive_page_renders_readonly_details(client):
+    tid = _add_active(client)
+    todo_data = todo.load(_data_path(client))
+    todo.set_task_notes(todo_data, tid, "archived notes")
+    todo.add_subtask(todo_data, tid, "a")
+    todo.save(_data_path(client), todo_data)
+    client.post("/refresh", data={"completed": tid})
+    html = client.get("/archive").get_data(as_text=True)
+    assert "task-details" in html
+    assert "data-readonly" in html
+    assert "archived notes" in html

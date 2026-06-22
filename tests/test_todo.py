@@ -937,3 +937,166 @@ def test_set_difficulty_sets_and_clears():
     todo.set_difficulty(data, tid, "")            # clear
     assert "difficulty" not in data["archive"][0]
     todo.set_difficulty(data, "ghost", "hard")    # unknown id = no-op (no raise)
+
+
+# --------------------------------------------------------------------------- #
+# Task notes
+# --------------------------------------------------------------------------- #
+
+def test_add_task_initializes_notes_and_subtasks():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    t = data["active"][0]
+    assert t["notes"] == ""
+    assert t["subtasks"] == []
+
+
+def test_set_task_notes_sets_and_strips():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.set_task_notes(data, tid, "  buy milk  ")
+    assert data["active"][0]["notes"] == "buy milk"
+
+
+def test_set_task_notes_can_clear():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.set_task_notes(data, tid, "something")
+    todo.set_task_notes(data, tid, "")
+    assert data["active"][0]["notes"] == ""
+
+
+def test_set_task_notes_unknown_id_noop():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    todo.set_task_notes(data, "ghost", "x")   # no raise
+    assert data["active"][0]["notes"] == ""
+
+
+# --------------------------------------------------------------------------- #
+# Subtasks
+# --------------------------------------------------------------------------- #
+
+def test_add_subtask_appends_undone():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "  step one  ")
+    subs = data["active"][0]["subtasks"]
+    assert subs == [{"text": "step one", "done": False}]
+
+
+def test_add_subtask_empty_raises():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    with pytest.raises(ValueError):
+        todo.add_subtask(data, tid, "   ")
+
+
+def test_add_subtask_unknown_id_noop():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, "ghost", "x")
+    assert data["active"][0]["subtasks"] == []
+
+
+def test_toggle_subtask_flips_done():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "a")
+    todo.toggle_subtask(data, tid, 0)
+    assert data["active"][0]["subtasks"][0]["done"] is True
+    todo.toggle_subtask(data, tid, 0)
+    assert data["active"][0]["subtasks"][0]["done"] is False
+
+
+def test_toggle_subtask_out_of_range_noop():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "a")
+    todo.toggle_subtask(data, tid, 5)       # no raise, no change
+    todo.toggle_subtask(data, "ghost", 0)
+    assert data["active"][0]["subtasks"][0]["done"] is False
+
+
+def test_edit_subtask_replaces_text():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "old")
+    todo.edit_subtask(data, tid, 0, "  new  ")
+    assert data["active"][0]["subtasks"][0]["text"] == "new"
+
+
+def test_edit_subtask_empty_raises():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "old")
+    with pytest.raises(ValueError):
+        todo.edit_subtask(data, tid, 0, "  ")
+
+
+def test_edit_subtask_out_of_range_noop():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "old")
+    todo.edit_subtask(data, tid, 9, "new")    # no raise, no change
+    assert data["active"][0]["subtasks"][0]["text"] == "old"
+
+
+def test_delete_subtask_removes_at_index():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "a")
+    todo.add_subtask(data, tid, "b")
+    todo.delete_subtask(data, tid, 0)
+    assert [s["text"] for s in data["active"][0]["subtasks"]] == ["b"]
+
+
+def test_delete_subtask_out_of_range_noop():
+    data = todo._empty()
+    todo.add_task(data, "Task", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.add_subtask(data, tid, "a")
+    todo.delete_subtask(data, tid, 9)
+    todo.delete_subtask(data, "ghost", 0)
+    assert len(data["active"][0]["subtasks"]) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Recurrence copies notes + subtasks (done reset)
+# --------------------------------------------------------------------------- #
+
+def test_refresh_recurring_copies_notes_and_resets_subtasks():
+    data = todo._empty()
+    todo.add_task(data, "Daily report",
+                  due=(NOW + timedelta(hours=2)).isoformat(),
+                  recurrence="daily", now=NOW)
+    tid = data["active"][0]["id"]
+    todo.set_task_notes(data, tid, "remember details")
+    todo.add_subtask(data, tid, "part a")
+    todo.add_subtask(data, tid, "part b")
+    todo.toggle_subtask(data, tid, 0)       # mark first done
+
+    todo.refresh(data, [tid], now=NOW)
+
+    # Archived occurrence keeps its checked state.
+    archived = data["archive"][0]
+    assert archived["subtasks"][0]["done"] is True
+    # Spawned occurrence copies notes + subtask text, all done reset to False.
+    spawned = data["active"][0]
+    assert spawned["notes"] == "remember details"
+    assert [s["text"] for s in spawned["subtasks"]] == ["part a", "part b"]
+    assert all(s["done"] is False for s in spawned["subtasks"])
+    # Deep copy: mutating the spawned subtask must not touch the archived one.
+    spawned["subtasks"][1]["done"] = True
+    assert archived["subtasks"][1]["done"] is False
