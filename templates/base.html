@@ -220,9 +220,44 @@
       });
     });
 
-    // Keep the server alive while this tab is open. When the tab closes,
-    // pings stop and the server auto-quits after ~30 s (AUTO_QUIT mode).
-    setInterval(function () { fetch('/heartbeat', { method: 'GET' }); }, 10000);
+    // Keep the server alive while this tab is open (AUTO_QUIT mode), and shut
+    // it down promptly when the tab closes.
+    //
+    // Each tab has a unique id. We heartbeat from inside a Web Worker because a
+    // worker's timer is NOT throttled to ~1/min the way a hidden tab's
+    // main-thread setInterval is — so the server stays alive even when this tab
+    // is open but backgrounded. On `pagehide` we fire a sendBeacon close signal
+    // so closing the tab quits the server within a couple of seconds instead of
+    // waiting for a heartbeat timeout. (pagehide also fires on normal page
+    // navigation; the server waits a short grace window so the next page can
+    // re-register and cancel the shutdown.)
+    (function () {
+      var TAB_ID = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+
+      function ping() { fetch('/heartbeat?tab=' + TAB_ID, { method: 'GET' }); }
+
+      ping();  // register this tab immediately on load
+
+      if (window.Worker) {
+        try {
+          var src = 'setInterval(function(){postMessage(0)}, 10000)';
+          var url = URL.createObjectURL(
+            new Blob([src], { type: 'application/javascript' })
+          );
+          new Worker(url).onmessage = ping;
+        } catch (e) {
+          setInterval(ping, 10000);  // worker unavailable → main-thread fallback
+        }
+      } else {
+        setInterval(ping, 10000);
+      }
+
+      window.addEventListener('pagehide', function () {
+        navigator.sendBeacon('/quit?tab=' + TAB_ID);
+      });
+    })();
   </script>
   <!-- Themed dropdown: auto-enhances every native <select> on the page. -->
   <script src="{{ url_for('static', filename='custom-select.js') }}" defer></script>

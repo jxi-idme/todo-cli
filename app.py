@@ -53,23 +53,92 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 # until a hard refresh. Zero keeps this single-user dev app always current.
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-# Auto-quit watchdog: when AUTO_QUIT=1, the server exits ~30 s after the last
-# browser tab is closed. The browser pings /heartbeat every 10 s; if the server
-# goes 30 s without a ping it sends itself SIGTERM and exits cleanly.
-_last_ping: float = 0.0
-_heartbeat_armed = False  # becomes True after the first ping is received
+# Auto-quit watchdog: when AUTO_QUIT=1, the server stays alive as long as at
+# least one browser tab is open and shuts down shortly after the last tab
+# closes. Each tab gets a unique id and:
+#   • pings GET /heartbeat?tab=<id> every 10 s. The ping runs inside a Web
+#     Worker (see base.html) whose timer is NOT subject to the ~1/min throttle
+#     browsers impose on hidden tabs' main-thread timers — so a backgrounded
+#     (but still open) tab keeps the server alive.
+#   • fires a POST /quit?tab=<id> beacon on `pagehide` so closing the tab shuts
+#     the server down promptly instead of waiting for a heartbeat timeout.
+#
+# Because this is a server-rendered app, `pagehide` also fires on ordinary
+# page-to-page navigation. To avoid quitting mid-navigation we wait a short
+# grace window after the last tab leaves: the next page re-registers within that
+# window and cancels the shutdown. A crashed/force-quit browser never sends a
+# beacon, so a tab whose heartbeat goes stale is evicted as a fallback.
+_QUIT_GRACE = 2.0     # seconds to wait after the last tab leaves before quitting
+_STALE_AFTER = 60.0   # a tab silent this long is treated as gone (crash fallback)
+
+_tab_lock = threading.Lock()
+_tabs: dict[str, float] = {}        # tab_id -> last heartbeat (monotonic seconds)
+_armed = False                      # True once any tab has ever registered
+_empty_since: float | None = None   # monotonic time the last tab left, or None
 
 
-def _heartbeat():
-    global _last_ping, _heartbeat_armed
-    _last_ping = time.monotonic()
-    _heartbeat_armed = True
+def _now(now):
+    return time.monotonic() if now is None else now
+
+
+def _register_tab(tab_id, now=None):
+    """Record a heartbeat from a tab (also its initial registration)."""
+    global _armed, _empty_since
+    now = _now(now)
+    with _tab_lock:
+        _tabs[tab_id] = now
+        _armed = True
+        _empty_since = None
+
+
+def _unregister_tab(tab_id, now=None):
+    """Drop a tab that fired its close beacon; start the grace clock if last."""
+    global _empty_since
+    now = _now(now)
+    with _tab_lock:
+        _tabs.pop(tab_id, None)
+        if _armed and not _tabs and _empty_since is None:
+            _empty_since = now
+
+
+def _should_quit(now=None):
+    """Decide whether the watchdog should shut the server down now.
+
+    Evicts stale tabs (crash fallback), then returns True only when the app is
+    armed, no live tabs remain, and the grace window has elapsed. Mutates the
+    grace bookkeeping, so it is called from a single place (the watchdog) or
+    from single-threaded tests.
+    """
+    global _empty_since
+    now = _now(now)
+    stale = [tid for tid, seen in _tabs.items() if now - seen > _STALE_AFTER]
+    for tid in stale:
+        del _tabs[tid]
+    if not _armed:
+        return False
+    if _tabs:
+        _empty_since = None
+        return False
+    if _empty_since is None:
+        _empty_since = now
+    return now - _empty_since >= _QUIT_GRACE
+
+
+def _reset_watchdog():
+    """Test helper: clear all watchdog state."""
+    global _armed, _empty_since
+    with _tab_lock:
+        _tabs.clear()
+        _armed = False
+        _empty_since = None
 
 
 def _watchdog():
     while True:
-        time.sleep(5)
-        if _heartbeat_armed and time.monotonic() - _last_ping > 30:
+        time.sleep(0.5)
+        with _tab_lock:
+            quit_now = _should_quit()
+        if quit_now:
             os.kill(os.getpid(), signal.SIGTERM)
             return
 
@@ -140,7 +209,19 @@ def inject_section_context():
 @app.route("/heartbeat")
 def heartbeat():
     """Keeps the auto-quit watchdog alive while a browser tab has the app open."""
-    _heartbeat()
+    tab_id = request.args.get("tab")
+    if tab_id:
+        _register_tab(tab_id)
+    return "", 204
+
+
+@app.route("/quit", methods=["POST"])
+def quit_tab():
+    """Close beacon: a tab fired `pagehide`, so deregister it. When the last
+    tab leaves, the watchdog shuts the server down after a short grace window."""
+    tab_id = request.args.get("tab")
+    if tab_id:
+        _unregister_tab(tab_id)
     return "", 204
 
 

@@ -22,7 +22,7 @@ pytest tests/test_journal_app.py         # journal route tests only
 pytest -k time_remaining                 # single test by name substring
 ```
 
-macOS dock app: click **TodoPup** in the dock (Automator app at `/Applications/TodoPup.app`). The server starts as a background daemon and auto-quits ~30 s after the last browser tab is closed. See `SETUP.md` for first-time installation.
+macOS dock app: click **TodoPup** in the dock (Automator app at `/Applications/TodoPup.app`). The server starts as a background daemon and auto-quits ~2 s after the last browser tab is closed (it stays alive while any tab is open, even backgrounded). See `SETUP.md` for first-time installation.
 
 ## Architecture
 
@@ -217,17 +217,30 @@ time-sensitive logic.
 ## Auto-quit (dock app mode)
 
 When Flask is started with `AUTO_QUIT=1` (set by `start_server.py`), a
-background watchdog thread in `app.py` monitors browser activity:
+background watchdog thread in `app.py` keeps the server alive while at least one
+browser tab is open and shuts it down promptly after the last tab closes. It
+tracks open tabs by id rather than a single global timer:
 
-- `GET /heartbeat` — no-op 204 route; resets the idle timer and arms the watchdog
-- Every open browser tab pings `/heartbeat` every 10 s (inline `setInterval` in
-  `base.html`)
-- If no ping arrives for 30 s after the first one, `os.kill(os.getpid(), SIGTERM)`
-  shuts the server down cleanly
+- Each tab generates a unique id and registers via `GET /heartbeat?tab=<id>`.
+- The heartbeat runs inside a **Web Worker** (inline Blob worker in `base.html`),
+  not a main-thread `setInterval`, because a worker's timer is *not* subject to
+  the ~1/min throttle browsers impose on hidden tabs. This means a tab that is
+  open **but backgrounded** keeps the server alive.
+- On `pagehide`, each tab fires `navigator.sendBeacon('/quit?tab=<id>')`. When
+  the last tab deregisters, the watchdog quits after a short grace window
+  (`_QUIT_GRACE`, 2 s) via `os.kill(os.getpid(), SIGTERM)`.
+- The grace window exists because this is a server-rendered app: `pagehide` also
+  fires on ordinary page-to-page navigation, and the next page re-registers
+  within the window, cancelling the shutdown. A real tab close never
+  re-registers, so the server quits ~2 s later.
+- A crashed/force-quit browser never sends a beacon; its heartbeat goes stale
+  and the tab is evicted after `_STALE_AFTER` (60 s) as a fallback.
 
-The watchdog only activates after the first heartbeat, so the server never
-auto-quits before any browser tab has loaded. Tests don't set `AUTO_QUIT=1` so
-they are unaffected.
+The watchdog only arms once a tab has registered, so the server never auto-quits
+before any browser tab has loaded. The decision logic is factored into pure,
+clock-injectable helpers (`_register_tab`, `_unregister_tab`, `_should_quit`,
+`_reset_watchdog`) so it is unit-tested without real threads/timers. Tests don't
+set `AUTO_QUIT=1` so the watchdog thread never starts.
 
 ### Related files
 

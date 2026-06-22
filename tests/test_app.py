@@ -562,6 +562,77 @@ def test_heartbeat_returns_204(client):
     assert resp.status_code == 204
 
 
+def test_heartbeat_with_tab_returns_204(client):
+    resp = client.get("/heartbeat?tab=abc123")
+    assert resp.status_code == 204
+
+
+def test_quit_beacon_returns_204(client):
+    resp = client.post("/quit?tab=abc123")
+    assert resp.status_code == 204
+
+
+# ── Auto-quit watchdog: tab-counting + grace window ─────────────────────────
+# These exercise the pure decision helpers with an injected monotonic clock,
+# so no real threads/timers are involved.
+
+
+@pytest.fixture
+def fresh_watchdog():
+    """Reset the module-level watchdog state before and after each test."""
+    app_module._reset_watchdog()
+    yield
+    app_module._reset_watchdog()
+
+
+def test_watchdog_does_not_quit_before_any_tab(fresh_watchdog):
+    # Never armed → never quits, even far in the future.
+    assert app_module._should_quit(now=1000.0) is False
+
+
+def test_watchdog_stays_alive_while_a_tab_is_registered(fresh_watchdog):
+    app_module._register_tab("t1", now=0.0)
+    # Long after, with the tab still heartbeating, it must stay alive.
+    app_module._register_tab("t1", now=100.0)
+    assert app_module._should_quit(now=100.0) is False
+
+
+def test_watchdog_quits_after_grace_when_last_tab_closes(fresh_watchdog):
+    app_module._register_tab("t1", now=0.0)
+    app_module._unregister_tab("t1", now=0.0)
+    # Within the grace window: still alive.
+    assert app_module._should_quit(now=1.0) is False
+    # After the grace window: quit.
+    assert app_module._should_quit(now=app_module._QUIT_GRACE + 0.1) is True
+
+
+def test_watchdog_navigation_does_not_quit(fresh_watchdog):
+    # Simulate a full-page navigation: the closing page fires a quit beacon,
+    # then the new page registers again within the grace window.
+    app_module._register_tab("t1", now=0.0)
+    app_module._unregister_tab("t1", now=0.0)
+    app_module._register_tab("t1", now=0.5)  # new page loaded
+    assert app_module._should_quit(now=app_module._QUIT_GRACE + 1.0) is False
+
+
+def test_watchdog_other_tab_keeps_server_alive(fresh_watchdog):
+    app_module._register_tab("t1", now=0.0)
+    app_module._register_tab("t2", now=0.0)
+    app_module._unregister_tab("t1", now=0.0)  # close one tab
+    assert app_module._should_quit(now=app_module._QUIT_GRACE + 5.0) is False
+
+
+def test_watchdog_evicts_stale_tab_then_quits(fresh_watchdog):
+    # A crashed/force-quit browser never sends a quit beacon; its heartbeat
+    # simply goes stale and the tab is evicted, then the server quits.
+    app_module._register_tab("t1", now=0.0)
+    stale = app_module._STALE_AFTER
+    assert app_module._should_quit(now=stale - 1) is False
+    # Past the stale window: tab evicted, grace starts, then quits.
+    assert app_module._should_quit(now=stale + 1) is False
+    assert app_module._should_quit(now=stale + 1 + app_module._QUIT_GRACE + 0.1) is True
+
+
 def test_refresh_saves_difficulty(client):
     client.post("/add", data={"title": "rate me"})
     data = todo.load(_data_path(client))
