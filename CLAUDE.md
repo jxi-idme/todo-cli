@@ -62,7 +62,9 @@ Both use forgiving `load()` (missing keys defaulted, corrupt files backed up to
 ### Task model
 
 `id` (uuid4 hex), `title`, `due` (ISO 8601 or null), `created`, `recurrence`,
-`tags` (list of names). Archived tasks add `completed`; expired add `expired_at`.
+`tags` (list of names), `notes` (plain-text description, default `""`),
+`subtasks` (list of `{text, done}`), `difficulty` (`easy`/`medium`/`hard`, or
+unset). Archived tasks add `completed`; expired add `expired_at`.
 
 ### Core behaviors
 
@@ -77,6 +79,20 @@ Both use forgiving `load()` (missing keys defaulted, corrupt files backed up to
   validation. Filtering (`?tags=a,b`) is multi-select OR semantics on active and
   archive pages; unknown/stale tags are dropped silently.
 - **Archive**: completed tasks move here. Accessible via `/archive`.
+- **Difficulty**: optional `easy`/`medium`/`hard` rating (`set_difficulty`). A
+  reveal-on-check picker appears under a task when it's checked done on the
+  active list (square circular-style radios, click again to deselect); editable
+  afterward on the Archive page.
+- **Notes + subtasks**: each task has an optional plain-text `notes` description
+  and a flat `subtasks` checklist. Both are edited inline via a dropdown that
+  expands when the task **title** is clicked; a collapsed task with either shows
+  a grey "…" hint plus an `n/m` progress count. Edits save in the background via
+  small JSON endpoints (`POST /task/<id>/notes`, `/task/<id>/subtasks`,
+  `…/<i>/toggle`, `…/<i>`, `…/<i>/delete`) and re-render in place
+  (`static/task-details.js`). Pure helpers: `set_task_notes`, `add_subtask`,
+  `toggle_subtask`, `edit_subtask`, `delete_subtask`. Subtasks are independent of
+  parent completion; a recurring task's next occurrence copies notes + subtask
+  text with all checks reset. Read-only on the Archive page.
 
 ### Todo templates
 
@@ -92,7 +108,8 @@ Both use forgiving `load()` (missing keys defaulted, corrupt files backed up to
 
 One entry per calendar date (date is the unique key). Fields: `id` (uuid4 hex),
 `date` (YYYY-MM-DD), `title`, `body`, `created`, `updated`,
-`tags` (`{section_id: [tag names]}`), `numbers` (`{section_id: float}`).
+`tags` (`{section_id: [tag names]}`), `numbers` (`{section_id: float}`),
+`mood` (integer 1–7, or null).
 
 ### Section model
 
@@ -145,6 +162,21 @@ health, work.
 - **Section management**: add tag or numeric sections, rename, recolor, set unit
   label, soft-delete (archive). Archive link is right-justified on the manage page
   title row — not in the nav.
+- **Rich entry body** (`journal-richtext.js`): the body is a `<textarea>` while
+  focused and renders formatted text in place on **blur** (click-to-edit). Discord-
+  style inline markup: `**bold**`, `*italic*`, `__underline__`, `~~strike~~`
+  (nesting of different markers; HTML-escaped first). No third-party libraries.
+- **Inline @mention tagging**: an `@name` in the body that matches an existing tag
+  (permanent, archived, or a temporary tag used before) is highlighted in that
+  tag's section color and added to the day's tags on save (additive, non-
+  destructive union with the chips). Underscores match multi-word tags
+  (`@alex_dad` → `alex dad`); the rendered highlight drops the `@`. Lookup index
+  via `tag_section_index`; parsing via `extract_mentions`; mentions reflect live
+  in the chip area on blur (ticking existing chips / injecting temporary ones).
+- **Mood** (`journal-mood.js`): an optional **1–7** mood per entry, picked from
+  seven Pompompurin GIFs (`static/img/N-pompom.gif`) on the "What happened today"
+  line, right-justified. Single-select, click again to deselect; the chosen GIF
+  stays full opacity, the others dim. Stored as `mood` on the entry.
 
 ### Journal templates
 
@@ -156,7 +188,11 @@ management), `journal_sections_archive.html` (archived sections & tags).
 
 - **`journal.js`**: calendar widget + move-entry + delete-entry + draft
   protection. Uses `window.confirmModal` (defined globally in `base.html`).
-- **`journal-search.js`**: client-side search/filter logic.
+- **`journal-search.js`**: client-side search/filter logic. Search-result tags
+  are color-coded by their section (`tag_chips` in `search_index`).
+- **`journal-richtext.js`**: click-to-edit body rendering (inline formatting +
+  color-coded `@mentions`) and live mention→chip reflection.
+- **`journal-mood.js`**: the 7-GIF mood picker (select/deselect, dims the rest).
 - **`style.css`**: shared dark amber/monospace theme. CSS variables in `:root`:
   `--panel`, `--text`, `--muted`, `--border`, `--accent` (#e0a955 amber),
   `--danger` (#e0524d red). All `<select>` elements use a custom SVG caret
@@ -235,21 +271,34 @@ What exists today:
 
 **Remaining: minor UI changes** — small layout/styling polish only.
 
-### Next: incorporate task data into analytics
+### Task data in analytics — DONE
 
-Combine **to-do/task data** (`data/tasks.json`: `active`/`archive`/`expired`,
-recurrence, tags, due/completed timestamps) with journal data in the analytics
-page. Goal is a unified view across both domains. Ideas to explore:
+The `/journal/analytics` page now has a **Tasks** tab combining to-do data with
+journal data: completion throughput over time, overdue/expiry trends, recurring-
+task adherence, difficulty breakdown, and task tags — plus cross-domain charts
+(tasks-vs-numeric scatter, entry/completion calendar). Pure task-side aggregation
+helpers live in `todo.py` (e.g. `completion_throughput`, `difficulty_breakdown`);
+the analytics route merges a task payload into the data feed. Built on the same
+`CHARTS` registry + SVG utilities in `analytics.js`; no new dependencies.
 
-- Task completion rate / throughput over time; overdue and expiry trends.
-- Recurring-task adherence (completed vs. missed occurrences).
-- Cross-domain correlation: task load vs. journal numeric sections (e.g. tasks
-  completed vs. sleep), or task tags alongside journal tags.
-- Calendar/heatmap overlays combining entry days and task completions.
+### Shipped quality-of-life features
 
-Implementation notes: keep the pure-logic/HTTP split — add task-side
-aggregation helpers in `todo.py` (pure, testable, injectable `now`), and either
-extend `analytics_payload` or add a parallel task payload that the analytics
-route merges. Reuse the existing `CHARTS` registry and SVG utilities in
-`analytics.js`; no new dependencies. Tags are shared vocabulary across tasks and
-journal sections, so tag-based cross-domain charts are a natural first step.
+Each was spec'd first under `docs/superpowers/specs/` (brainstorm → spec →
+subagent implementation, TDD). See the feature sections above for detail:
+
+- **Task notes + subtasks** (inline dropdown on the active list).
+- **Rich journal entries** — Discord-style inline formatting + `@mention` tagging.
+- **Mood quick-pick** — optional 1–7 per-entry mood via 7 Pompompurin GIFs.
+
+### Future features
+
+Planned additions, in priority order (specs to be written first, as above):
+
+- **Today dashboard** — a combined landing view: tasks due today (with subtask
+  progress), today's journal entry + mood, and streak/stat tidbits. Cross-domain;
+  reuses `entry_streak`, `today_iso`, and due-date filtering. Likely a new
+  `/today` route linked from both navs (purely additive).
+- **Command palette (⌘K)** — app-wide fuzzy jump to any page/action, quick-add a
+  task, jump to a date.
+- **Mood analytics chart** — surface the per-entry mood (1–7) on the analytics
+  page via the `CHARTS` registry (mood over time / day-of-week average).
