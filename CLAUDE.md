@@ -139,6 +139,9 @@ health, work.
 | `POST /journal/sections/<id>/tags` | Add a permanent tag |
 | `POST /journal/sections/<id>/tags/<tag>/delete` | Archive a permanent tag |
 | `POST /journal/sections/<id>/tags/<tag>/restore` | Restore an archived tag |
+| `POST /journal/sections/<id>/tags/<tag>/promote` | Promote a temporary (entry-only) tag to permanent |
+| `POST /journal/sections/<id>/tags/<tag>/demote` | Demote a permanent tag (re-derives as temporary if still on entries, else archives) |
+| `POST /journal/sections/<id>/tags/<tag>/archive-temp` | Archive a temporary (entry-only) tag so it stops being derived as temporary |
 | `GET /journal/sections/archive` | View archived sections and tags |
 
 ### Key journal behaviors
@@ -161,7 +164,21 @@ health, work.
   from recorded values). All three combine with AND.
 - **Section management**: add tag or numeric sections, rename, recolor, set unit
   label, soft-delete (archive). Archive link is right-justified on the manage page
-  title row — not in the nav.
+  title row — not in the nav; the archive page has the inverse right-justified
+  "← Manage" back link (`.archive-link.back-link`). Each **tag** section's tags
+  live in two drag-and-drop zones (`journal-sections.js`, native HTML5 DnD, no
+  libraries): an upper **Permanent** zone (the section's master `tags`) and a
+  lower **Temporary** zone (tags used on entries but not in the master/archived
+  lists, derived by `temporary_tags`, dashed/italic chips). Dragging a chip
+  between zones auto-updates tag state and reloads (PRG): **temp→perm** POSTs
+  `/tags/<tag>/promote` (`add_section_tag`); **perm→temp** POSTs
+  `/tags/<tag>/demote` (`demote_section_tag` — removes from the master list and,
+  if the tag is still used on entries, leaves it un-archived so it re-derives as
+  temporary; otherwise archives it). In-chip buttons (no-drag fallback): permanent
+  chips have × (the existing archive remove); temporary chips have × that
+  **archives** the tag (`/tags/<tag>/archive-temp` → `archive_temporary_tag`, adds
+  it to `archived_tags` so it stops being derived). Promotion of a temp tag is
+  drag-only (drag it up into the Permanent zone) — there is no promote button.
 - **Rich entry body** (`journal-richtext.js`): the body is a `<textarea>` while
   focused and renders formatted text in place on **blur** (click-to-edit). Discord-
   style inline markup: `**bold**`, `*italic*`, `__underline__`, `~~strike~~`
@@ -193,6 +210,10 @@ management), `journal_sections_archive.html` (archived sections & tags).
 - **`journal-richtext.js`**: click-to-edit body rendering (inline formatting +
   color-coded `@mentions`) and live mention→chip reflection.
 - **`journal-mood.js`**: the 7-GIF mood picker (select/deselect, dims the rest).
+- **`journal-sections.js`**: drag-and-drop tag reassignment on the manage page
+  (native HTML5 DnD). Drop a chip in the Permanent/Temporary zone to promote/
+  demote; submits a POST form (PRG reload). Progressive enhancement over the
+  in-chip ↑/× button fallbacks. Drop-target highlights via `.tag-zone.drag-over`.
 - **`style.css`**: shared dark amber/monospace theme. CSS variables in `:root`:
   `--panel`, `--text`, `--muted`, `--border`, `--accent` (#e0a955 amber),
   `--danger` (#e0524d red). All `<select>` elements use a custom SVG caret
@@ -271,18 +292,43 @@ What exists today:
   bounds): `analytics_payload`, `describe`, `tag_frequency`, `tag_cooccurrence`,
   `tag_trend`, `tag_streak`, `entry_streak`, `numeric_series`, `dow_averages`,
   `word_counts`, `entry_gaps`, `creation_hours`, `date_density`,
-  `section_coverage`, plus `_filter_entries_by_date`.
+  `section_coverage`, plus `_filter_entries_by_date`. **Mood helpers** (all
+  ignore null moods): `mood_series`, `mood_dow_averages`, `mood_distribution`,
+  `mood_by_date`, `mood_numeric_pairs` (same-day mood↔numeric pairs for
+  correlation), and `_entry_mood` (the defensive 1..7-or-None reader).
+  `analytics_payload` now carries each entry's `mood` (int 1–7 or null).
 - **`static/analytics.js`** — vanilla SVG charts via a `CHARTS` registry
-  (add a chart = append one descriptor). Five tabs: Overview, Consistency
-  (entry calendar, words/entry, gaps, time-of-day), Tags (frequency, trend,
-  per-tag heatmap, co-occurrence), Numeric (line + rolling avg, day-of-week,
-  correlation scatter), Coverage. Shared date-range filter; refetches on load
-  and on window focus (10s debounce). Colors read from CSS vars + section hex.
+  (add a chart = append one descriptor). Tabs: Overview, **Mood** (gated on any
+  recorded mood via `hasMood`), Consistency (entry calendar, words/entry, gaps,
+  time-of-day), Tags (frequency, trend, per-tag heatmap, co-occurrence), Numeric
+  (line + rolling avg, day-of-week, correlation scatter), Coverage, Tasks.
+  Shared date-range filter; refetches on load and on window focus (10s debounce).
+  Colors read from CSS vars + section hex.
+  - **Mood tab**: mood-over-time (fixed 1–7 axis + 7-day rolling avg overlay),
+    average mood by day of week, mood distribution histogram, and mood-vs-numeric
+    scatter (one small-multiple per numeric section, with a Pearson `r`).
+  - **Overview tab** is an at-a-glance dashboard: prominent **stat cards**
+    (entries this period, current/longest streak, avg mood + a tiny mood
+    sparkline, tasks completed, latest value per numeric section) and an
+    auto-generated **Insights** list (`buildInsights`: weekend-vs-weekday mood,
+    best good-mood stretch, streak milestone, strongest mood↔numeric
+    correlation), plus a compact secondary stats row. Styles: `.stat-cards` /
+    `.stat-card*`, `.stat-spark`, `.insights*` in `style.css`.
 - **`templates/journal_analytics.html`** + analytics styles in `style.css`
   (`.analytics-*`, `.chart-svg`/`.chart-svg-fixed`). Tests in
   `tests/test_journal_analytics.py` and route tests in `test_journal_app.py`.
 
 **Remaining: minor UI changes** — small layout/styling polish only.
+
+### Mood analytics — DONE
+
+The per-entry mood (1–7) is surfaced on the analytics page via the `CHARTS`
+registry. A dedicated **Mood** tab (gated on `hasMood`) carries mood over time
+(rolling avg overlay), average mood by day of week, mood distribution, and
+mood-vs-numeric correlation; the **Overview** tab gained an average-mood stat
+card with a sparkline plus auto-insights that reference mood. Pure helpers live
+in `journal.py` (`mood_series`, `mood_dow_averages`, `mood_distribution`,
+`mood_by_date`, `mood_numeric_pairs`); see the analytics description above.
 
 ### Task data in analytics — DONE
 
@@ -313,5 +359,3 @@ Planned additions, in priority order (specs to be written first, as above):
   `/today` route linked from both navs (purely additive).
 - **Command palette (⌘K)** — app-wide fuzzy jump to any page/action, quick-add a
   task, jump to a date.
-- **Mood analytics chart** — surface the per-entry mood (1–7) on the analytics
-  page via the `CHARTS` registry (mood over time / day-of-week average).

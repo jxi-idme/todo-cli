@@ -566,12 +566,16 @@ h2 {
    "Tag the day" label's gap, even though the taller GIFs stretch the row.
    The picker stays centered (align-items: center on .mood-row) — GIFs unmoved. */
 .mood-row .label { margin: 0; align-self: flex-end; }
-.mood-picker { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; }
+.mood-picker { display: flex; align-items: flex-end; justify-content: flex-end; gap: 0.75rem; }
 .mood-opt {
   background: none; border: none; padding: 0; cursor: pointer; line-height: 0;
   transition: opacity 0.15s ease;
 }
 .mood-opt img { height: 42px; width: auto; display: block; }
+/* GIF #6's artwork is smaller than the rest; bump it up a touch so it reads at
+   a comparable size. The picker is bottom-aligned, so it grows upward only and
+   its baseline stays on the same line as the others. */
+.mood-opt:nth-child(6) img { height: 52px; }
 /* When a mood is chosen, dim the unselected GIFs. No ring/outline/scale. */
 .mood-picker.has-selection .mood-opt:not(.selected) { opacity: 0.4; }
 
@@ -637,6 +641,16 @@ h2 {
 .archive-link { color: var(--muted); font-size: 0.8rem; text-decoration: none; }
 .archive-link:hover { color: var(--text); }
 .archived-chip { opacity: 0.65; border-style: dashed; }
+.temp-tags { margin: 0.2rem 0; }
+.temp-tags-label { display: block; font-size: 0.66rem; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
+.temp-chip { border-style: dashed; font-style: italic; color: var(--muted); }
+/* Drag-and-drop reassignment zones (manage page). */
+.tag-zone { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px dashed transparent; border-radius: 8px; transition: border-color 0.12s, background 0.12s; }
+.tag-zone .zone-chips { display: flex; flex-wrap: wrap; gap: 0.2rem; align-items: center; min-height: 1.8rem; }
+.tag-zone .perm-chip[draggable="true"] { cursor: grab; }
+.tag-zone .perm-chip.dragging { opacity: 0.4; }
+.tag-zone.drag-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.zone-empty { font-style: italic; }
 .restore-x { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; line-height: 1; }
 .restore-btn { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: 0.25rem 0.7rem; cursor: pointer; font: inherit; font-size: 0.82rem; }
 .restore-btn:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
@@ -1346,6 +1360,52 @@ input[type="number"]::-webkit-inner-spin-button {
 .stat { display: inline-flex; gap: 0.35rem; }
 .stat-label { color: var(--muted); }
 .stat-value { color: var(--text); }
+
+/* Overview: prominent at-a-glance stat cards. */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+}
+.stat-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.stat-card-value {
+  font-size: 1.5rem;
+  color: var(--accent);
+  line-height: 1.1;
+}
+.stat-card-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.2rem;
+}
+.stat-card-sub { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem; }
+.stat-spark { display: block; margin-top: 0.4rem; overflow: visible; }
+
+/* Overview: auto-generated insight callouts. */
+.insights {
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 0.8rem;
+  margin-bottom: 1rem;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+.insights-title {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+.insights-list { margin: 0; padding-left: 1.1rem; }
+.insights-list li { font-size: 0.85rem; color: var(--text); margin: 0.15rem 0; }
 
 /* Calendar / per-tag heatmap cells. */
 .heat-cell { stroke: var(--bg); stroke-width: 1; }

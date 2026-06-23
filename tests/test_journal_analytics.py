@@ -9,7 +9,7 @@ import journal
 from datetime import datetime
 
 
-def _entry(date, tags=None, numbers=None, body="", created=None):
+def _entry(date, tags=None, numbers=None, body="", created=None, mood=None):
     return {
         "id": date,  # id is irrelevant to aggregation; reuse the date
         "date": date,
@@ -18,6 +18,7 @@ def _entry(date, tags=None, numbers=None, body="", created=None):
         "created": created or (date + "T09:00:00"),
         "tags": tags or {},
         "numbers": numbers or {},
+        "mood": mood,
     }
 
 
@@ -224,6 +225,92 @@ def test_section_coverage_marks_filled_sections():
 
 
 # --------------------------------------------------------------------------- #
+# Mood aggregations (mood is int 1..7 or null; nulls are always ignored)
+# --------------------------------------------------------------------------- #
+
+def test_mood_series_sorted_and_skips_nulls():
+    entries = [
+        _entry("2026-06-03", mood=7),
+        _entry("2026-06-01", mood=4),
+        _entry("2026-06-02", mood=None),  # no mood -> skipped
+    ]
+    assert journal.mood_series(entries, None, None) == [
+        {"date": "2026-06-01", "mood": 4},
+        {"date": "2026-06-03", "mood": 7},
+    ]
+
+
+def test_mood_series_respects_date_range():
+    entries = [
+        _entry("2026-06-01", mood=3),
+        _entry("2026-06-09", mood=6),
+    ]
+    assert journal.mood_series(entries, "2026-06-05", None) == [
+        {"date": "2026-06-09", "mood": 6},
+    ]
+
+
+def test_mood_dow_averages_by_weekday():
+    # 2026-06-01 is a Monday.
+    entries = [
+        _entry("2026-06-01", mood=6),  # Mon
+        _entry("2026-06-08", mood=4),  # Mon
+        _entry("2026-06-02", mood=5),  # Tue
+        _entry("2026-06-03", mood=None),  # Wed, no mood
+    ]
+    dow = journal.mood_dow_averages(entries, None, None)
+    assert dow["Mon"] == 5.0
+    assert dow["Tue"] == 5.0
+    assert dow["Wed"] is None
+    assert set(dow) == {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+
+def test_mood_distribution_counts_each_value_1_to_7():
+    entries = [
+        _entry("2026-06-01", mood=5),
+        _entry("2026-06-02", mood=5),
+        _entry("2026-06-03", mood=7),
+        _entry("2026-06-04", mood=None),  # ignored
+    ]
+    dist = journal.mood_distribution(entries, None, None)
+    assert dist == {1: 0, 2: 0, 3: 0, 4: 0, 5: 2, 6: 0, 7: 1}
+
+
+def test_mood_by_date_maps_date_to_mood_skipping_nulls():
+    entries = [
+        _entry("2026-06-01", mood=4),
+        _entry("2026-06-02", mood=None),
+        _entry("2026-06-03", mood=6),
+    ]
+    assert journal.mood_by_date(entries, None, None) == {
+        "2026-06-01": 4, "2026-06-03": 6}
+
+
+def test_mood_numeric_pairs_pairs_same_day_values():
+    entries = [
+        _entry("2026-06-01", numbers={NUM: 8.0}, mood=6),
+        _entry("2026-06-02", numbers={NUM: 5.0}, mood=3),
+        _entry("2026-06-03", numbers={NUM: 7.0}, mood=None),  # no mood -> skip
+        _entry("2026-06-04", mood=5),                          # no number -> skip
+    ]
+    pairs = journal.mood_numeric_pairs(entries, NUM, None, None)
+    assert pairs == [
+        {"date": "2026-06-01", "value": 8.0, "mood": 6},
+        {"date": "2026-06-02", "value": 5.0, "mood": 3},
+    ]
+
+
+def test_mood_numeric_pairs_respects_date_range():
+    entries = [
+        _entry("2026-06-01", numbers={NUM: 8.0}, mood=6),
+        _entry("2026-06-09", numbers={NUM: 5.0}, mood=3),
+    ]
+    assert journal.mood_numeric_pairs(entries, NUM, "2026-06-05", None) == [
+        {"date": "2026-06-09", "value": 5.0, "mood": 3},
+    ]
+
+
+# --------------------------------------------------------------------------- #
 # analytics_payload
 # --------------------------------------------------------------------------- #
 
@@ -233,7 +320,7 @@ def test_analytics_payload_shape():
     journal.add_section_tag(data, sec["id"], "alex")
     journal.upsert_entry(
         data, "2026-06-10", "title", "two words",
-        tags={sec["id"]: ["alex"]}, numbers={},
+        tags={sec["id"]: ["alex"]}, numbers={}, mood=5,
         now=datetime(2026, 6, 10, 9, 0, 0),
     )
     payload = journal.analytics_payload(data)
@@ -243,8 +330,9 @@ def test_analytics_payload_shape():
     assert set(s) == {"id", "name", "type", "color", "tags", "unit"}
     assert s["name"] == "people" and s["tags"] == ["alex"]
     e = payload["entries"][0]
-    assert set(e) == {"date", "tags", "numbers", "body", "created"}
+    assert set(e) == {"date", "tags", "numbers", "body", "created", "mood"}
     assert e["date"] == "2026-06-10"
+    assert e["mood"] == 5
     assert payload["date_range"] == {"min": "2026-06-10", "max": "2026-06-10"}
 
 

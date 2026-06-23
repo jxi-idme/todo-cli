@@ -13,7 +13,10 @@
   <a class="nav-search" href="{{ url_for('journal_search') }}">Search</a>
 {% endblock %}
 {% block content %}
-  <h2>Archive</h2>
+  <div class="page-title-row">
+    <h2>Archive</h2>
+    <a class="archive-link back-link" href="{{ url_for('journal_sections') }}">← Manage</a>
+  </div>
   <p class="hint">Restore a section or tag to make it active again.</p>
 
   {% if archived_sections %}

@@ -576,6 +576,158 @@ def test_load_migrates_archived_tags_field(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# Temporary tags (derived from entries) for the manage page
+# --------------------------------------------------------------------------- #
+
+def test_temporary_tags_empty_store():
+    assert journal.temporary_tags(journal._empty()) == {}
+
+
+def test_temporary_tags_no_entries():
+    data = journal._empty()
+    journal.add_section(data, "people", "tag", "#fff")
+    assert journal.temporary_tags(data) == {}
+
+
+def test_temporary_tags_includes_entry_only_tag():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["zed"]},
+                         now=NOW)
+    assert journal.temporary_tags(data) == {s["id"]: ["zed"]}
+
+
+def test_temporary_tags_excludes_permanent():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "maya")
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["maya"]},
+                         now=NOW)
+    assert journal.temporary_tags(data) == {}
+
+
+def test_temporary_tags_excludes_archived():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "alex")
+    journal.remove_section_tag(data, s["id"], "alex")  # -> archived_tags
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["alex"]},
+                         now=NOW)
+    assert journal.temporary_tags(data) == {}
+
+
+def test_temporary_tags_case_insensitive_match_excludes():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "Maya")  # stored normalized -> "maya"
+    # An entry tag is also normalized to "maya" on upsert; it must not surface.
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["MAYA"]},
+                         now=NOW)
+    assert journal.temporary_tags(data) == {}
+
+
+def test_temporary_tags_sorted_and_deduped():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-10", "a", "", tags={s["id"]: ["zed", "abe"]},
+                         now=NOW)
+    journal.upsert_entry(data, "2026-06-11", "b", "", tags={s["id"]: ["abe", "mo"]},
+                         now=NOW)
+    # Sorted, deduped across entries.
+    assert journal.temporary_tags(data) == {s["id"]: ["abe", "mo", "zed"]}
+
+
+def test_temporary_tags_omits_sections_with_none():
+    data = journal._empty()
+    a = journal.add_section(data, "people", "tag", "#fff")
+    b = journal.add_section(data, "work", "tag", "#000")
+    journal.add_section_tag(data, b["id"], "deploy")
+    journal.upsert_entry(data, "2026-06-10", "t", "",
+                         tags={a["id"]: ["zed"], b["id"]: ["deploy"]}, now=NOW)
+    # Only section a has a temporary tag; b's tag is permanent.
+    assert journal.temporary_tags(data) == {a["id"]: ["zed"]}
+
+
+def test_temporary_tag_stops_being_temporary_once_promoted():
+    """Promoting a temporary tag is just add_section_tag; afterwards it is
+    registered as permanent and drops out of temporary_tags."""
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["zed"]},
+                         now=NOW)
+    assert journal.temporary_tags(data) == {s["id"]: ["zed"]}
+    journal.add_section_tag(data, s["id"], "zed")  # promote
+    assert "zed" in s["tags"]
+    assert journal.temporary_tags(data) == {}
+
+
+def test_demote_section_tag_still_on_entry_becomes_temporary():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "maya")
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["maya"]},
+                         now=NOW)
+    journal.demote_section_tag(data, s["id"], "maya")
+    assert "maya" not in s["tags"]
+    assert "maya" not in s["archived_tags"]            # not archived (still used)
+    assert journal.temporary_tags(data) == {s["id"]: ["maya"]}
+
+
+def test_demote_section_tag_unused_archives():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.add_section_tag(data, s["id"], "ghost")
+    journal.demote_section_tag(data, s["id"], "ghost")  # no entry uses it
+    assert "ghost" not in s["tags"]
+    assert "ghost" in s["archived_tags"]
+    assert journal.temporary_tags(data) == {}
+
+
+def test_demote_section_tag_unknown_is_noop():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.demote_section_tag(data, s["id"], "nope")
+    assert s["tags"] == []
+    assert s["archived_tags"] == []
+
+
+def test_archive_temporary_tag_removes_it_from_temporary():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["zed"]},
+                         now=NOW)
+    assert journal.temporary_tags(data) == {s["id"]: ["zed"]}
+    journal.archive_temporary_tag(data, s["id"], "zed")
+    assert "zed" in s["archived_tags"]
+    assert "zed" not in s["tags"]          # never was permanent
+    assert journal.temporary_tags(data) == {}
+
+
+def test_archive_temporary_tag_normalizes_and_is_idempotent():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={s["id"]: ["zed"]},
+                         now=NOW)
+    journal.archive_temporary_tag(data, s["id"], "ZED")   # normalizes
+    journal.archive_temporary_tag(data, s["id"], "zed")   # idempotent
+    assert s["archived_tags"] == ["zed"]
+
+
+def test_archive_temporary_tag_unknown_section_is_noop():
+    data = journal._empty()
+    s = journal.add_section(data, "people", "tag", "#fff")
+    journal.archive_temporary_tag(data, "nope", "zed")
+    assert s["archived_tags"] == []
+
+
+def test_archive_temporary_tag_numeric_section_is_noop():
+    data = journal._empty()
+    s = journal.add_section(data, "sleep", "numeric", "#fff", unit="hrs")
+    journal.archive_temporary_tag(data, s["id"], "zed")
+    assert s["archived_tags"] == []
+
+
+# --------------------------------------------------------------------------- #
 # Rich entries: @mention tag-section index
 # --------------------------------------------------------------------------- #
 
