@@ -36,24 +36,50 @@
       </form>
 
       {% if s.type == "tag" %}
-        <div class="perm-tags">
-          {% for tag in s.tags %}
-            <span class="perm-chip">{{ tag }}
-              <button form="rm-{{ s.id }}-{{ loop.index }}" type="submit"
-                      class="x" title="Remove from future entries (existing entries unaffected)">×</button>
-            </span>
-            <form id="rm-{{ s.id }}-{{ loop.index }}" method="post"
-                  action="{{ url_for('journal_section_tag_remove', section_id=s.id, tag=tag) }}"></form>
-          {% endfor %}
-          {% if not s.tags %}
-            <span class="muted-note">No permanent tags yet.</span>
-          {% endif %}
+        {% set temps = temporary_tags.get(s.id) %}
+        {# Upper zone: Permanent (master tags). Drop here = promote. #}
+        <div class="tag-zone perm-zone" data-zone="permanent" data-section="{{ s.id }}"
+             data-promote-url="{{ url_for('journal_section_tag_promote', section_id=s.id, tag='__TAG__') }}">
+          <span class="temp-tags-label">Permanent</span>
+          <div class="perm-tags zone-chips">
+            {% for tag in s.tags %}
+              <span class="perm-chip" draggable="true"
+                    data-tag="{{ tag }}" data-origin="permanent">{{ tag }}
+                <button form="rm-{{ s.id }}-{{ loop.index }}" type="submit"
+                        class="x" title="Remove from future entries (existing entries unaffected)">×</button>
+              </span>
+              <form id="rm-{{ s.id }}-{{ loop.index }}" method="post"
+                    action="{{ url_for('journal_section_tag_remove', section_id=s.id, tag=tag) }}"></form>
+            {% endfor %}
+            {% if not s.tags %}
+              <span class="muted-note zone-empty">No permanent tags yet.</span>
+            {% endif %}
+          </div>
         </div>
         <form class="addrow" method="post"
               action="{{ url_for('journal_section_tag_add', section_id=s.id) }}">
           <input type="text" name="tag" placeholder="add permanent tag…" required>
           <button type="submit">add</button>
         </form>
+        {# Lower zone: Temporary (derived from entries). Drop here = demote. #}
+        <div class="tag-zone temp-zone" data-zone="temporary" data-section="{{ s.id }}"
+             data-demote-url="{{ url_for('journal_section_tag_demote', section_id=s.id, tag='__TAG__') }}">
+          <span class="temp-tags-label">Temporary</span>
+          <div class="temp-tags zone-chips">
+            {% for tag in temps or [] %}
+              <span class="perm-chip temp-chip" draggable="true"
+                    data-tag="{{ tag }}" data-origin="temporary">{{ tag }}
+                <button form="archtemp-{{ s.id }}-{{ loop.index }}" type="submit"
+                        class="x" title="Archive this tag (drag up to make it permanent)">×</button>
+              </span>
+              <form id="archtemp-{{ s.id }}-{{ loop.index }}" method="post"
+                    action="{{ url_for('journal_section_tag_archive_temp', section_id=s.id, tag=tag) }}"></form>
+            {% endfor %}
+            {% if not temps %}
+              <span class="muted-note zone-empty">No temporary tags.</span>
+            {% endif %}
+          </div>
+        </div>
       {% endif %}
 
       <form class="delete-section" method="post"
@@ -85,4 +111,7 @@
     <input class="unit-input" type="text" name="unit" placeholder="unit (numeric only)">
     <button type="submit">+ add section</button>
   </form>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='journal-sections.js') }}" defer></script>
 {% endblock %}

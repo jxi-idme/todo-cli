@@ -623,7 +623,8 @@ def journal_entry_delete(entry_id):
 def journal_sections():
     data = journal.load(journal_file())
     return render_template("journal_sections.html", data=data,
-                           sections=journal.active_sections(data))
+                           sections=journal.active_sections(data),
+                           temporary_tags=journal.temporary_tags(data))
 
 
 @app.route("/journal/sections/archive")
@@ -716,6 +717,37 @@ def journal_section_tag_add(section_id):
 def journal_section_tag_remove(section_id, tag):
     data = journal.load(journal_file())
     journal.remove_section_tag(data, section_id, tag)
+    journal.save(journal_file(), data)
+    return redirect(url_for("journal_sections"))
+
+
+@app.route("/journal/sections/<section_id>/tags/<tag>/promote", methods=["POST"])
+def journal_section_tag_promote(section_id, tag):
+    """Promote a temporary (entry-only) tag into the section's permanent list."""
+    data = journal.load(journal_file())
+    try:
+        journal.add_section_tag(data, section_id, tag)
+        journal.save(journal_file(), data)
+    except ValueError:
+        flash("Could not promote tag: check the name.")
+    return redirect(url_for("journal_sections"))
+
+
+@app.route("/journal/sections/<section_id>/tags/<tag>/demote", methods=["POST"])
+def journal_section_tag_demote(section_id, tag):
+    """Demote a permanent tag (drop into the Temporary zone). Removes it from the
+    master list; re-derived as temporary if still on entries, else archived."""
+    data = journal.load(journal_file())
+    journal.demote_section_tag(data, section_id, tag)
+    journal.save(journal_file(), data)
+    return redirect(url_for("journal_sections"))
+
+
+@app.route("/journal/sections/<section_id>/tags/<tag>/archive-temp", methods=["POST"])
+def journal_section_tag_archive_temp(section_id, tag):
+    """Archive a temporary (entry-only) tag so it stops being derived as one."""
+    data = journal.load(journal_file())
+    journal.archive_temporary_tag(data, section_id, tag)
     journal.save(journal_file(), data)
     return redirect(url_for("journal_sections"))
 

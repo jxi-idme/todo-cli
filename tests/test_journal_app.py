@@ -282,6 +282,20 @@ def test_sections_page_lists_sections(client):
     assert b"work" in resp.data
 
 
+def test_sections_page_shows_temporary_tags(client):
+    """Tags that live only on entries (not permanent or archived) appear in a
+    Temporary group on the manage page."""
+    data = journal.load(_journal_path())
+    people = next(s for s in data["sections"] if s["name"] == "people")
+    journal.upsert_entry(data, "2026-06-10", "t", "",
+                         tags={people["id"]: ["zaphod"]})
+    journal.save(_journal_path(), data)
+    resp = client.get("/journal/sections")
+    assert resp.status_code == 200
+    assert b"zaphod" in resp.data
+    assert b"Temporary" in resp.data
+
+
 def test_add_tag_section(client):
     resp = client.post("/journal/sections/add", data={
         "name": "mood", "type": "tag", "color": "#abcdef"})
@@ -381,6 +395,15 @@ def test_archive_page_lists_archived_tags(client):
     assert b"maya" in resp.data
 
 
+def test_archive_page_has_back_to_manage_link(client):
+    resp = client.get("/journal/sections/archive")
+    assert resp.status_code == 200
+    # A dedicated back-to-manage control (the inverse of the manage->archive
+    # link), distinct from the nav.
+    assert b'class="archive-link back-link"' in resp.data
+    assert b'href="/journal/sections"' in resp.data
+
+
 def test_restore_section(client):
     sid = journal.active_sections(journal.load(_journal_path()))[0]["id"]
     client.post(f"/journal/sections/{sid}/delete")
@@ -398,6 +421,69 @@ def test_restore_section_tag(client):
     data = journal.load(_journal_path())
     assert "maya" in journal.section_by_id(data, sid)["tags"]
     assert "maya" not in journal.section_by_id(data, sid)["archived_tags"]
+
+
+def test_promote_temporary_tag_to_permanent(client):
+    """POSTing the promote route moves an entry-only temp tag into the section's
+    permanent list, and it stops appearing as temporary."""
+    sid = _first_tag_section_id()
+    data = journal.load(_journal_path())
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={sid: ["zaphod"]})
+    journal.save(_journal_path(), data)
+    # Precondition: it's temporary, not permanent.
+    assert journal.temporary_tags(journal.load(_journal_path())) == {sid: ["zaphod"]}
+
+    resp = client.post(f"/journal/sections/{sid}/tags/zaphod/promote")
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert "zaphod" in journal.section_by_id(data, sid)["tags"]
+    assert journal.temporary_tags(data) == {}
+
+
+def test_demote_permanent_tag_used_on_entry_resurfaces_as_temporary(client):
+    """Dragging a permanent tag into the Temporary zone hits the demote route.
+    If the tag is still used on an entry, demoting removes it from the master
+    list and temporary_tags() re-derives it from the entry (not archived)."""
+    sid = _first_tag_section_id()
+    client.post(f"/journal/sections/{sid}/tags", data={"tag": "maya"})
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "Day one", "body": "",
+        f"tag:{sid}": "maya",
+    })
+    resp = client.post(f"/journal/sections/{sid}/tags/maya/demote")
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    s = journal.section_by_id(data, sid)
+    assert "maya" not in s["tags"]
+    assert "maya" not in s["archived_tags"]          # not archived (still used)
+    assert journal.temporary_tags(data) == {sid: ["maya"]}  # re-derived
+
+
+def test_demote_unused_permanent_tag_archives_it(client):
+    """Demoting a permanent tag that no entry uses archives it (no temporary)."""
+    sid = _first_tag_section_id()
+    client.post(f"/journal/sections/{sid}/tags", data={"tag": "ghost"})
+    resp = client.post(f"/journal/sections/{sid}/tags/ghost/demote")
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    s = journal.section_by_id(data, sid)
+    assert "ghost" not in s["tags"]
+    assert "ghost" in s["archived_tags"]
+    assert journal.temporary_tags(data) == {}
+
+
+def test_archive_temporary_tag_route(client):
+    """The × on a temporary chip archives it: no longer temporary, in archived."""
+    sid = _first_tag_section_id()
+    data = journal.load(_journal_path())
+    journal.upsert_entry(data, "2026-06-10", "t", "", tags={sid: ["zaphod"]})
+    journal.save(_journal_path(), data)
+    assert journal.temporary_tags(journal.load(_journal_path())) == {sid: ["zaphod"]}
+    resp = client.post(f"/journal/sections/{sid}/tags/zaphod/archive-temp")
+    assert resp.status_code == 302
+    data = journal.load(_journal_path())
+    assert "zaphod" in journal.section_by_id(data, sid)["archived_tags"]
+    assert journal.temporary_tags(data) == {}
 
 
 def test_readd_archived_tag_via_form_unarchives_it(client):
@@ -430,6 +516,19 @@ def test_analytics_data_returns_json(client):
     assert {"sections", "entries", "date_range", "tasks"} <= set(payload)
     # seeded store has the six default sections
     assert [s["name"] for s in payload["sections"]][0] == "people"
+
+
+def test_analytics_data_entries_carry_mood(client):
+    """The analytics feed surfaces each entry's mood (int 1..7 or null) so the
+    Mood tab and Overview can chart it."""
+    client.post("/journal/save", data={
+        "date": "2026-06-15", "title": "t", "body": "", "mood": "5"})
+    client.post("/journal/save", data={
+        "date": "2026-06-16", "title": "t", "body": "", "mood": ""})
+    payload = client.get("/journal/analytics/data").get_json()
+    by_date = {e["date"]: e["mood"] for e in payload["entries"]}
+    assert by_date["2026-06-15"] == 5
+    assert by_date["2026-06-16"] is None
 
 
 def test_analytics_route_not_shadowed_by_date_route(client):

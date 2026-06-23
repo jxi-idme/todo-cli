@@ -19,6 +19,7 @@
   // Panel definitions. `needs` optionally gates a tab's visibility.
   var PANELS = [
     { id: "overview", label: "Overview" },
+    { id: "mood", label: "Mood", needs: hasMood },
     { id: "consistency", label: "Consistency" },
     { id: "tags", label: "Tags" },
     { id: "numeric", label: "Numeric", needs: hasNumeric },
@@ -37,6 +38,10 @@
   function hasTasks() {
     var t = _data.tasks;
     return !!t && (t.active.length || t.archive.length || t.expired.length);
+  }
+
+  function hasMood() {
+    return _data.entries.some(function (e) { return e.mood != null; });
   }
 
   // Tasks completed within the active date range, by completed-day.
@@ -248,6 +253,123 @@
     return { current: runs[runs.length - 1], longest: Math.max.apply(null, runs), runs: runs };
   }
 
+  // ----- Overview building blocks -----
+
+  // A prominent stat card: big value + label, optional sub-line.
+  function statCard(grid, value, label, sub) {
+    var card = document.createElement("div");
+    card.className = "stat-card";
+    var v = document.createElement("div");
+    v.className = "stat-card-value";
+    v.textContent = (value == null || value === "") ? "—" : value;
+    var l = document.createElement("div");
+    l.className = "stat-card-label";
+    l.textContent = label;
+    card.appendChild(v); card.appendChild(l);
+    if (sub != null && sub !== "") {
+      var s = document.createElement("div");
+      s.className = "stat-card-sub";
+      s.textContent = sub;
+      card.appendChild(s);
+    }
+    grid.appendChild(card);
+    return card;
+  }
+
+  // A tiny inline sparkline (mood 1..7) appended into a stat card.
+  function moodSparkline(card, series) {
+    if (series.length < 2) return;
+    var w = 120, h = 28;
+    var svg = U.svgEl("svg", {
+      viewBox: "0 0 " + w + " " + h, width: w, height: h, class: "stat-spark",
+    });
+    var min = 1, max = 7, span = max - min;
+    var pts = series.map(function (s, i) {
+      return {
+        x: (w * i) / (series.length - 1),
+        y: 3 + (h - 6) * (1 - (s.mood - min) / span),
+      };
+    });
+    var c = colors();
+    U.drawLine(svg, pts, c.accent, 1.5);
+    U.drawDot(svg, pts[pts.length - 1].x, pts[pts.length - 1].y, 2, c.accent);
+    card.appendChild(svg);
+  }
+
+  // Completed tasks in range (whole-store, by completed-day), for Overview.
+  function tasksCompletedInRange() {
+    var byDay = taskThroughput();
+    return Object.keys(byDay).reduce(function (a, d) { return a + byDay[d]; }, 0);
+  }
+
+  // Auto-generated plain-language insights. Each returns a string or null.
+  function buildInsights(entries) {
+    var out = [];
+    var moods = moodSeries(entries);
+
+    // Weekend vs weekday mood.
+    if (moods.length >= 4) {
+      var wk = [], we = [];
+      moods.forEach(function (m) {
+        var dow = new Date(m.date + "T00:00:00").getDay();  // 0=Sun..6=Sat
+        (dow === 0 || dow === 6 ? we : wk).push(m.mood);
+      });
+      if (wk.length && we.length) {
+        var mk = wk.reduce(function (a, b) { return a + b; }, 0) / wk.length;
+        var me = we.reduce(function (a, b) { return a + b; }, 0) / we.length;
+        var diff = me - mk;
+        if (Math.abs(diff) >= 0.4) {
+          out.push("Your mood averages " + U.fmt(Math.abs(diff)) +
+                   (diff > 0 ? " higher on weekends." : " higher on weekdays."));
+        }
+      }
+    }
+
+    // Best mood stretch (longest run of consecutive good days, mood >= 5).
+    if (moods.length) {
+      var bestLen = 0, bestEnd = null, run = 0, prev = null;
+      moods.forEach(function (m) {
+        var good = m.mood >= 5;
+        if (good && prev && dayDiff(prev, m.date) === 1) run++;
+        else run = good ? 1 : 0;
+        prev = m.date;
+        if (run > bestLen) { bestLen = run; bestEnd = m.date; }
+      });
+      if (bestLen >= 3) {
+        out.push("Best stretch: " + bestLen + " good days ending " + bestEnd + ".");
+      }
+    }
+
+    // Streak milestone.
+    var dates = uniqueDates(entries);
+    var st = streaks(dates);
+    if (st.current >= 3 && st.current === st.longest) {
+      out.push("You've journaled " + st.current +
+               " days straight — your longest yet.");
+    }
+
+    // Strongest mood<->numeric correlation across numeric sections.
+    var best = null;
+    U.numericSections(_data.sections).forEach(function (s) {
+      var pairs = entries.filter(function (e) {
+        return moodOf(e) != null && (e.numbers || {})[s.id] != null;
+      });
+      if (pairs.length < 3) return;
+      var r = pearson(pairs.map(function (e) { return Number(e.numbers[s.id]); }),
+                      pairs.map(function (e) { return moodOf(e); }));
+      if (r != null && (!best || Math.abs(r) > Math.abs(best.r))) {
+        best = { name: s.name, r: r };
+      }
+    });
+    if (best && Math.abs(best.r) >= 0.3) {
+      out.push("More " + best.name + " tracks with " +
+               (best.r > 0 ? "better" : "worse") + " mood (r=" +
+               (best.r > 0 ? "+" : "") + U.fmt(best.r) + ").");
+    }
+
+    return out.slice(0, 4);
+  }
+
   CHARTS.push({
     id: "overview-summary",
     panel: "overview",
@@ -256,8 +378,57 @@
       if (!entries.length) { U.empty(container, "No entries in this range."); return; }
       var dates = uniqueDates(entries);
       var st = streaks(dates);
-      var words = entries.map(function (e) { return (e.body || "").split(/\s+/).filter(Boolean).length; });
-      var wd = U.describe(words);
+      var moods = moodSeries(entries);
+      var md = U.describe(moods.map(function (m) { return m.mood; }));
+
+      // ----- prominent stat cards -----
+      var grid = document.createElement("div");
+      grid.className = "stat-cards";
+      statCard(grid, entries.length, "entries this period",
+               "last: " + dates[dates.length - 1]);
+      statCard(grid, st.current + "d", "current streak",
+               "longest " + st.longest + "d");
+      var moodCard = statCard(grid, md.count ? U.fmt(md.mean) : null,
+                              "avg mood",
+                              md.count ? md.count + " day" + (md.count === 1 ? "" : "s") : "no mood yet");
+      if (md.count) moodSparkline(moodCard, moods);
+      if (hasTasks()) {
+        statCard(grid, tasksCompletedInRange(), "tasks completed", null);
+      }
+      // Current numeric highlights: latest value per numeric section.
+      U.numericSections(sections).forEach(function (s) {
+        var series = numericSeries(entries, s.id);
+        if (!series.length) return;
+        var last = series[series.length - 1];
+        statCard(grid, U.fmt(last.value) + (s.unit ? " " + s.unit : ""),
+                 s.name, "latest " + last.date);
+      });
+      container.appendChild(grid);
+
+      // ----- auto-insights -----
+      var insights = buildInsights(entries);
+      if (insights.length) {
+        var box = document.createElement("div");
+        box.className = "insights";
+        var h = document.createElement("div");
+        h.className = "insights-title";
+        h.textContent = "Insights";
+        box.appendChild(h);
+        var ul = document.createElement("ul");
+        ul.className = "insights-list";
+        insights.forEach(function (text) {
+          var li = document.createElement("li");
+          li.textContent = text;
+          ul.appendChild(li);
+        });
+        box.appendChild(ul);
+        container.appendChild(box);
+      }
+
+      // ----- compact secondary stats (kept from the original summary) -----
+      var words = entries.map(function (e) {
+        return (e.body || "").split(/\s+/).filter(Boolean).length;
+      });
       var coveredCounts = entries.map(function (e) {
         var n = 0;
         sections.forEach(function (s) {
@@ -266,14 +437,9 @@
         });
         return n;
       });
-      var avgCov = U.describe(coveredCounts).mean;
       U.statsRow(container, [
-        ["entries", entries.length],
-        ["current streak", st.current + "d"],
-        ["longest streak", st.longest + "d"],
-        ["last entry", dates[dates.length - 1]],
-        ["avg words/entry", U.fmt(wd.mean)],
-        ["avg sections filled", U.fmt(avgCov)],
+        ["avg words/entry", U.fmt(U.describe(words).mean)],
+        ["avg sections filled", U.fmt(U.describe(coveredCounts).mean)],
       ]);
     },
   });
@@ -1114,6 +1280,206 @@
                              ["completion days", doneDates.length]]);
     },
   });
+
+  // ===================== Mood charts ====================================== //
+  // Mood is an int 1..7 or null; every mood reader skips nulls. JS mirrors the
+  // pure helpers in journal.py (mood_series / mood_dow_averages /
+  // mood_distribution / mood_by_date / mood_numeric_pairs).
+
+  var DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  function moodOf(e) {
+    var m = e.mood;
+    return (m == null) ? null : Number(m);
+  }
+  function moodSeries(entries) {
+    return entries
+      .filter(function (e) { return moodOf(e) != null; })
+      .map(function (e) { return { date: e.date, mood: moodOf(e) }; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  }
+  function moodByDate(entries) {
+    var out = {};
+    entries.forEach(function (e) { var m = moodOf(e); if (m != null) out[e.date] = m; });
+    return out;
+  }
+
+  CHARTS.push({
+    id: "mood-over-time", panel: "mood", title: "Mood over time",
+    render: function (container, entries, sections, c) {
+      var series = moodSeries(entries);
+      if (!series.length) { U.empty(container, "No mood recorded in this range."); return; }
+      var w = 600, h = 180, pad = 30;
+      var svg = U.svg(w, h);
+      // Fixed 1..7 scale so the chart reads as an absolute mood, not relative.
+      var min = 1, max = 7, span = max - min;
+      U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 6, c);
+      function ptAt(i, v) {
+        var x = series.length === 1 ? pad + (w - pad - 10) / 2
+                                    : pad + ((w - pad - 10) * i) / (series.length - 1);
+        var y = 10 + (h - pad - 10) * (1 - (v - min) / span);
+        return { x: x, y: y };
+      }
+      var vals = series.map(function (s) { return s.mood; });
+      var roll = rollingAvg(vals, 7).map(function (v, i) { return ptAt(i, v); });
+      var pts = series.map(function (s, i) { return ptAt(i, s.mood); });
+      U.drawLine(svg, roll, U.colorMix(c.muted, 90), 1);   // 7-day rolling avg
+      U.drawLine(svg, pts, c.accent, 1.5);
+      pts.forEach(function (p) { U.drawDot(svg, p.x, p.y, 2, c.accent); });
+      U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10,
+                 [series[0].date, series[series.length - 1].date], c);
+      U.text(svg, 0, 14, "7", c.muted, { size: 9 });
+      U.text(svg, 0, h - pad + 2, "1", c.muted, { size: 9 });
+      container.appendChild(svg);
+      var d = U.describe(vals);
+      U.statsRow(container, [
+        ["mean", U.fmt(d.mean)], ["median", U.fmt(d.median)],
+        ["min", U.fmt(d.min)], ["max", U.fmt(d.max)],
+        ["std dev", U.fmt(d.stdev)], ["days", d.count],
+      ]);
+    },
+  });
+
+  CHARTS.push({
+    id: "mood-dow", panel: "mood", title: "Average mood by day of week",
+    render: function (container, entries, sections, c) {
+      var buckets = [[], [], [], [], [], [], []];
+      entries.forEach(function (e) {
+        var m = moodOf(e);
+        if (m == null) return;
+        var dow = (new Date(e.date + "T00:00:00").getDay() + 6) % 7;
+        buckets[dow].push(m);
+      });
+      var avgs = buckets.map(function (b) {
+        return b.length ? b.reduce(function (a, x) { return a + x; }, 0) / b.length : null;
+      });
+      if (avgs.every(function (a) { return a == null; })) {
+        U.empty(container, "No mood recorded in this range."); return;
+      }
+      var w = 600, h = 180, pad = 30;
+      var svg = U.svg(w, h);
+      // Bars scaled on the fixed 1..7 mood scale.
+      var min = 1, max = 7;
+      U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 6, c);
+      var bw = (w - pad - 10) / 7;
+      avgs.forEach(function (a, i) {
+        if (a == null) return;
+        var bh = (h - pad - 10) * ((a - min) / (max - min));
+        U.drawBar(svg, pad + i * bw + 3, 10 + (h - pad - 10) - bh, bw - 6, bh, c.accent);
+      });
+      U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10, DOW_NAMES, c);
+      container.appendChild(svg);
+      var ranked = DOW_NAMES
+        .map(function (n, i) { return [n, avgs[i]]; })
+        .filter(function (p) { return p[1] != null; })
+        .sort(function (a, b) { return b[1] - a[1]; });
+      U.statsRow(container, [
+        ["best", ranked[0][0] + " (" + U.fmt(ranked[0][1]) + ")"],
+        ["worst", ranked[ranked.length - 1][0] + " (" + U.fmt(ranked[ranked.length - 1][1]) + ")"],
+      ]);
+    },
+  });
+
+  CHARTS.push({
+    id: "mood-distribution", panel: "mood", title: "Mood distribution",
+    render: function (container, entries, sections, c) {
+      var dist = {};
+      for (var n = 1; n <= 7; n++) dist[n] = 0;
+      var any = false;
+      entries.forEach(function (e) {
+        var m = moodOf(e);
+        if (m != null && m >= 1 && m <= 7) { dist[m]++; any = true; }
+      });
+      if (!any) { U.empty(container, "No mood recorded in this range."); return; }
+      var w = 600, h = 180, pad = 30;
+      var svg = U.svg(w, h);
+      var keys = [1, 2, 3, 4, 5, 6, 7];
+      var max = Math.max.apply(null, keys.map(function (k) { return dist[k]; })) || 1;
+      var bw = (w - pad - 10) / keys.length;
+      keys.forEach(function (k, i) {
+        var bh = (h - pad - 10) * (dist[k] / max);
+        U.drawBar(svg, pad + i * bw + 3, 10 + (h - pad - 10) - bh, bw - 6, bh, c.accent);
+        U.text(svg, pad + i * bw + bw / 2, 10 + (h - pad - 10) - bh - 3,
+               dist[k] || "", c.muted, { anchor: "middle", size: 9 });
+      });
+      U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10,
+                 keys.map(String), c);
+      container.appendChild(svg);
+      // Describe the underlying values (one per recorded mood) for mode etc.
+      var vals = [];
+      keys.forEach(function (k) { for (var j = 0; j < dist[k]; j++) vals.push(k); });
+      var d = U.describe(vals);
+      U.statsRow(container, [["most common", U.fmt(d.mode)],
+                             ["mean", U.fmt(d.mean)]]);
+    },
+  });
+
+  CHARTS.push({
+    id: "mood-numeric-scatter", panel: "mood",
+    title: "Mood vs. journal number",
+    render: function (container, entries, sections, c) {
+      var nums = U.numericSections(sections);
+      if (!nums.length) { U.empty(container, "No numeric sections to correlate."); return; }
+      var rendered = false;
+      nums.forEach(function (s) {
+        // Per-day pairs: x = the numeric value, y = mood (fixed 1..7 axis).
+        var pairs = entries.filter(function (e) {
+          return moodOf(e) != null && (e.numbers || {})[s.id] != null;
+        }).map(function (e) {
+          return { x: Number(e.numbers[s.id]), y: moodOf(e) };
+        });
+        if (pairs.length < 2) return;
+        rendered = true;
+        var block = document.createElement("div");
+        block.className = "section-block";
+        var h4 = document.createElement("h4");
+        h4.textContent = s.name + (s.unit ? " (" + s.unit + ")" : "");
+        block.appendChild(h4);
+        var w = 600, h = 240, pad = 36;
+        var svg = U.svg(w, h);
+        var xs = pairs.map(function (p) { return p.x; });
+        var xMin = Math.min.apply(null, xs), xMax = Math.max.apply(null, xs);
+        var xSpan = xMax - xMin || 1;
+        var yMin = 1, yMax = 7, ySpan = yMax - yMin;
+        U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 6, c);
+        pairs.forEach(function (p) {
+          var x = (xMax - xMin) === 0
+            ? pad + (w - pad - 10) / 2
+            : pad + (w - pad - 10) * ((p.x - xMin) / xSpan);
+          var y = 10 + (h - pad - 10) * (1 - (p.y - yMin) / ySpan);
+          U.drawDot(svg, x, y, 3, U.colorMix(s.color, 80));
+        });
+        U.text(svg, 0, 14, "7", c.muted, { size: 9 });
+        U.text(svg, 0, h - pad + 2, "1", c.muted, { size: 9 });
+        U.text(svg, w / 2, h - 2, s.name + " (x)  vs  mood (y)", c.muted,
+               { anchor: "middle", size: 9 });
+        block.appendChild(svg);
+        var r = pearson(pairs.map(function (p) { return p.x; }),
+                        pairs.map(function (p) { return p.y; }));
+        U.statsRow(block, [["points", pairs.length],
+                           ["correlation r", r == null ? null : U.fmt(r)]]);
+        container.appendChild(block);
+      });
+      if (!rendered) {
+        U.empty(container, "Need 2+ days with both a mood and a journal number.");
+      }
+    },
+  });
+
+  // Pearson correlation coefficient, or null if undefined (n<2 or zero variance).
+  function pearson(xs, ys) {
+    var n = xs.length;
+    if (n < 2) return null;
+    var mx = xs.reduce(function (a, b) { return a + b; }, 0) / n;
+    var my = ys.reduce(function (a, b) { return a + b; }, 0) / n;
+    var sxy = 0, sxx = 0, syy = 0;
+    for (var i = 0; i < n; i++) {
+      var dx = xs[i] - mx, dy = ys[i] - my;
+      sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+    }
+    if (sxx === 0 || syy === 0) return null;
+    return sxy / Math.sqrt(sxx * syy);
+  }
 
   // ----- date filtering -----
   function filterEntries() {

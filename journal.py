@@ -259,6 +259,54 @@ def remove_section_tag(data, section_id, tag):
     return data
 
 
+def _tag_used_on_entries(data, section_id, tag):
+    """True if `tag` (normalized) appears on any entry under `section_id`."""
+    tag = _normalize_name(tag)
+    for e in data.get("entries", []):
+        for raw in (e.get("tags") or {}).get(section_id, []) or []:
+            if _normalize_name(raw) == tag:
+                return True
+    return False
+
+
+def demote_section_tag(data, section_id, tag):
+    """Demote a permanent tag (the Temporary drop-zone target).
+
+    Removes the tag from the section's master `tags` list. If the tag is still
+    used on at least one entry it is left un-archived, so `temporary_tags`
+    naturally re-derives it (entry-only => temporary). If no entry uses it, it
+    falls back to the normal archive behavior (`remove_section_tag`). Unknown
+    id/tag = safe no-op.
+    """
+    tag = _normalize_name(tag)
+    s = section_by_id(data, section_id)
+    if s is None or not isinstance(s.get("tags"), list) or tag not in s["tags"]:
+        return data
+    if _tag_used_on_entries(data, section_id, tag):
+        s["tags"].remove(tag)  # entry use makes it temporary again
+    else:
+        remove_section_tag(data, section_id, tag)  # unused -> archive
+    return data
+
+
+def archive_temporary_tag(data, section_id, tag):
+    """Archive a temporary (entry-only) tag so it stops being derived as one.
+
+    Adds the normalized name to the section's `archived_tags` list (which
+    `temporary_tags` already excludes). Idempotent. A temporary tag is not in the
+    master `tags` list, so `remove_section_tag` would be a no-op for it — hence
+    this dedicated helper. No-op for an unknown id or a non-tag section.
+    """
+    tag = _normalize_name(tag)
+    s = section_by_id(data, section_id)
+    if s is None or s.get("type") != "tag":
+        return data
+    archived = s.setdefault("archived_tags", [])
+    if tag and tag not in archived:
+        archived.append(tag)
+    return data
+
+
 def archived_sections(data):
     """Sections that have been archived (soft-deleted), in stored order."""
     return [s for s in data.get("sections", []) if s.get("archived")]
@@ -289,6 +337,34 @@ def restore_section_tag(data, section_id, tag):
         if tag not in s.setdefault("tags", []):
             s["tags"].append(tag)
     return data
+
+
+def temporary_tags(data):
+    """Tags that appear on entries but are not in a section's master list.
+
+    Returns {section_id: [names]} for every section that has at least one such
+    tag. A "temporary" tag is one applied to an entry under a section but absent
+    from that section's permanent (`tags`) and archived (`archived_tags`) lists.
+    Names are matched case-insensitively (entry tags are already normalized on
+    upsert), deduped, and sorted alphabetically. Sections with no temporary tags
+    are omitted. Pure/deterministic — no clock needed.
+    """
+    out = {}
+    for s in data.get("sections", []):
+        sid = s.get("id")
+        registered = {
+            _normalize_name(n)
+            for n in (s.get("tags") or []) + (s.get("archived_tags") or [])
+        }
+        names = set()
+        for e in data.get("entries", []):
+            for raw in (e.get("tags") or {}).get(sid, []) or []:
+                n = _normalize_name(raw)
+                if n and n not in registered:
+                    names.add(n)
+        if names:
+            out[sid] = sorted(names)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -741,6 +817,77 @@ def dow_averages(entries, section_id, start, end):
     }
 
 
+# --------------------------------------------------------------------------- #
+# Mood aggregations (mood is an int 1..7 or null; nulls are always ignored)
+# --------------------------------------------------------------------------- #
+
+def _entry_mood(entry):
+    """The entry's recorded mood as an int in 1..7, or None.
+
+    Defensive: anything that isn't a valid 1..7 mood (including an absent or
+    null field) reads as None so callers can simply skip it."""
+    m = entry.get("mood")
+    return int(m) if _valid_mood(m) else None
+
+
+def mood_series(entries, start, end):
+    """[{date, mood}] of recorded moods, date-filtered and sorted by date.
+    Entries with no mood are omitted."""
+    out = []
+    for e in _filter_entries_by_date(entries, start, end):
+        m = _entry_mood(e)
+        if m is not None:
+            out.append({"date": e["date"], "mood": m})
+    out.sort(key=lambda d: d["date"])
+    return out
+
+
+def mood_dow_averages(entries, start, end):
+    """{weekday_name: mean mood | None} over recorded moods, Mon..Sun."""
+    buckets = {i: [] for i in range(7)}
+    for e in _filter_entries_by_date(entries, start, end):
+        m = _entry_mood(e)
+        if m is not None:
+            d = datetime.strptime(e["date"], "%Y-%m-%d").date()
+            buckets[d.weekday()].append(m)
+    return {
+        _DOW_NAMES[i]: (sum(v) / len(v) if v else None)
+        for i, v in buckets.items()
+    }
+
+
+def mood_distribution(entries, start, end):
+    """{1..7: count} histogram of recorded mood values (nulls ignored)."""
+    out = {n: 0 for n in range(1, 8)}
+    for e in _filter_entries_by_date(entries, start, end):
+        m = _entry_mood(e)
+        if m is not None:
+            out[m] += 1
+    return out
+
+
+def mood_by_date(entries, start, end):
+    """{date: mood} for every date-filtered entry that recorded a mood."""
+    return {
+        e["date"]: _entry_mood(e)
+        for e in _filter_entries_by_date(entries, start, end)
+        if _entry_mood(e) is not None
+    }
+
+
+def mood_numeric_pairs(entries, section_id, start, end):
+    """[{date, value, mood}] for days that have BOTH a mood and a value for one
+    numeric section, date-sorted. Powers mood-vs-numeric correlation."""
+    out = []
+    for e in _filter_entries_by_date(entries, start, end):
+        m = _entry_mood(e)
+        nums = e.get("numbers") or {}
+        if m is not None and section_id in nums:
+            out.append({"date": e["date"], "value": nums[section_id], "mood": m})
+    out.sort(key=lambda d: d["date"])
+    return out
+
+
 def word_counts(entries, start, end):
     """[{date, count}] of body word counts (whitespace split), sorted by date."""
     out = [
@@ -846,6 +993,7 @@ def analytics_payload(data):
             "numbers": dict(e.get("numbers") or {}),
             "body": e.get("body", ""),
             "created": e.get("created"),
+            "mood": _entry_mood(e),
         }
         for e in data.get("entries", [])
     ]
