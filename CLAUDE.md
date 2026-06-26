@@ -301,16 +301,23 @@ upgrade it). The lens swaps the deeper tabs:
 
 | Lens | Tabs |
 |---|---|
-| Shared (always) | **Overview** |
-| **Journal** | Mood · Consistency · Tags · Numeric · Coverage · **Tag** |
-| **Task** | Throughput · Timeliness · Adherence · Difficulty · Task tags · **Tag** |
+| Shared (always) | **Overview** · **Tags** · **Tag** |
+| **Journal** | Mood · Consistency · Numeric · Coverage |
+| **Task** | Throughput · Timeliness · Adherence · Difficulty |
 
 The old single **"Tasks"** tab was **refactored** into the Task-lens sub-tabs
 (no chart lost): `task-throughput`/`task-entry-calendar` → Throughput;
 `task-overdue`/`task-numeric-scatter` → Timeliness; `task-adherence` →
-Adherence; `task-difficulty` → Difficulty; `task-tag-frequency` → Task tags.
-`PANELS` entries now carry an optional `lens: [...]`; a tab with no lens is
-shared, and the **Tag** tab lists both lenses. The **Tag** tab has a bespoke
+Adherence; `task-difficulty` → Difficulty. The separate **"Task tags"** tab is
+**gone**: its `task-tag-frequency` chart was merged into the cross-domain
+**Tags** tab. Because tags are unified by name across domains, **Tags** is
+`lens: ["journal", "task"]` (shown in both lenses, like the **Tag** detail tab)
+and carries every tag chart in order — the journal tag analytics (frequency,
+trend, per-tag heatmap, co-occurrence) first, then the task-tag analytics
+(`task-tag-frequency`). It has no tab-level `needs`: the journal charts always
+render, and the task-tag chart shows its normal `U.empty(...)` state when there
+are no tasks. `PANELS` entries carry an optional `lens: [...]`; a tab with no
+lens is shared, and the **Tags** and **Tag** tabs list both lenses. The **Tag** tab has a bespoke
 `renderTagDetail()` (outside the `CHARTS` loop): a search box + `<datalist>` of
 all tag names, an async per-tag fetch of `/tag/<name>/overview` (cached per
 name+range), and **lens-aware** rendering (journal half vs task half), reusing
@@ -403,12 +410,14 @@ What exists today:
 - **`static/analytics.js`** — vanilla SVG charts via a `CHARTS` registry
   (add a chart = append one descriptor). Tabs: Overview, **Mood** (gated on any
   recorded mood via `hasMood`), Consistency (entry calendar, words/entry, gaps,
-  time-of-day), Tags (frequency, trend, per-tag heatmap, co-occurrence), Numeric
-  (line + rolling avg, day-of-week, correlation scatter), Coverage, plus a
-  **`Journal | Task` lens toggle** that swaps the deeper tabs (the old single
+  time-of-day), the cross-domain **Tags** tab (journal frequency, trend, per-tag
+  heatmap, co-occurrence, then task-tag frequency — shown in both lenses),
+  Numeric (line + rolling avg, day-of-week, correlation scatter), Coverage, plus
+  a **`Journal | Task` lens toggle** that swaps the deeper tabs (the old single
   "Tasks" tab is now the Task-lens sub-tabs Throughput/Timeliness/Adherence/
-  Difficulty/Task tags) and a shared **Tag** detail tab — see the "Tag pages /
-  backlinks" section above. Shared date-range filter; refetches on load and on
+  Difficulty; the former separate "Task tags" tab is folded into the shared Tags
+  tab) and a shared **Tag** detail tab — see the "Tag pages / backlinks" section
+  above. Shared date-range filter; refetches on load and on
   window focus (10s debounce). Colors read from CSS vars + section hex.
   - **Mood tab**: mood-over-time (fixed 1–7 axis + 7-day rolling avg overlay),
     average mood by day of week, mood distribution histogram, and mood-vs-numeric

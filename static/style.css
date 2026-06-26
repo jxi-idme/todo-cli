@@ -1155,7 +1155,7 @@ h2 {
    Kept to a single line: tabs flex to share the row, lens toggle pins right. */
 .analytics-tabs {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   flex-wrap: nowrap;
   border: 1px solid var(--border);

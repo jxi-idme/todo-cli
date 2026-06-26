@@ -27,7 +27,7 @@
     // Journal lens
     { id: "mood", label: "Mood", lens: ["journal"], needs: hasMood },
     { id: "consistency", label: "Consistency", lens: ["journal"] },
-    { id: "tags", label: "Tags", lens: ["journal"] },
+    { id: "tags", label: "Tags", lens: ["journal", "task"] },
     { id: "numeric", label: "Numeric", lens: ["journal"], needs: hasNumeric },
     { id: "coverage", label: "Coverage", lens: ["journal"] },
     // Task lens (the old single "Tasks" tab, refactored into sub-tabs)
@@ -35,7 +35,6 @@
     { id: "timeliness", label: "Timeliness", lens: ["task"], needs: hasTasks },
     { id: "adherence", label: "Adherence", lens: ["task"], needs: hasTasks },
     { id: "difficulty", label: "Difficulty", lens: ["task"], needs: hasTasks },
-    { id: "tasktags", label: "Task tags", lens: ["task"], needs: hasTasks },
     // Shared deep tag detail (lens-aware rendering)
     { id: "tag", label: "Tag", lens: ["journal", "task"] },
   ];
@@ -1169,9 +1168,11 @@
     },
   });
 
-  // --- Tasks: task-tag frequency ---
+  // --- Tags (task-side): task-tag frequency ---
+  // Lives in the merged cross-domain "Tags" tab (panel "tags"), after the
+  // journal tag charts. Renders its U.empty(...) state when there are no tasks.
   CHARTS.push({
-    id: "task-tag-frequency", panel: "tasktags", title: "Task tag frequency",
+    id: "task-tag-frequency", panel: "tags", title: "Task tag frequency",
     render: function (container, entries, sections, c) {
       var t = _data.tasks || { archive: [], active: [], expired: [], tags: {} };
       function inR(d) { return !d || ((!_from || d >= _from) && (!_to || d <= _to)); }
