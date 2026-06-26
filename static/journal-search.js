@@ -258,6 +258,22 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Tag popover triggers on result chips                                 */
+  /* ------------------------------------------------------------------ */
+  /* Each search-result tag chip (.entry-tag-chip) becomes a popover
+     trigger via the dedicated data-tagpop attribute (tag-popup.js). The
+     filter-dropdown checkboxes use a different attribute (data-tag), so
+     this never hijacks their filtering behavior. */
+  document.querySelectorAll(".entry-tag-chip").forEach(function (chip) {
+    var name = (chip.textContent || "").trim();
+    if (!name) return;
+    chip.classList.add("tag-pop-trigger");
+    chip.setAttribute("data-tagpop", name);
+    chip.setAttribute("role", "button");
+    chip.setAttribute("tabindex", "0");
+  });
+
+  /* ------------------------------------------------------------------ */
   /* Initial render                                                        */
   /* ------------------------------------------------------------------ */
 

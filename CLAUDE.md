@@ -206,7 +206,19 @@ management), `journal_sections_archive.html` (archived sections & tags).
 - **`journal.js`**: calendar widget + move-entry + delete-entry + draft
   protection. Uses `window.confirmModal` (defined globally in `base.html`).
 - **`journal-search.js`**: client-side search/filter logic. Search-result tags
-  are color-coded by their section (`tag_chips` in `search_index`).
+  are color-coded by their section (`tag_chips` in `search_index`). On init it
+  also marks each result `.entry-tag-chip` as a `.tag-pop-trigger`
+  (`data-tagpop`) so clicking a result tag opens the unified tag popover. The
+  filter-dropdown checkboxes keep their own `data-tag` attribute, untouched.
+- **`tag-popup.js`** (loaded app-wide via `base.html`): the unified, origin-
+  marked tag popover. A single delegated `document` click listener on the
+  dedicated `data-tagpop="<name>"` attribute (class `.tag-pop-trigger`) — NOT
+  bare `[data-tag]`, to avoid the search filter collision. Fetches
+  `/tag/<name>/overview`, renders an anchored popover that flips near viewport
+  edges, closes on ×/outside-click/Escape, and **Expand →** navigates to
+  `/journal/analytics#tag=<name>`. Self-contained mini SVG sparkline; no
+  dependency on `analytics.js`. Origin marks: ☑ for a task occurrence, a
+  section-colored ● dot for a journal one.
 - **`journal-richtext.js`**: click-to-edit body rendering (inline formatting +
   color-coded `@mentions`) and live mention→chip reflection.
 - **`journal-mood.js`**: the 7-GIF mood picker (select/deselect, dims the rest).
@@ -222,6 +234,104 @@ management), `journal_sections_archive.html` (archived sections & tags).
 - **`confirmModal`** is a global Promise-based dark modal defined in `base.html`'s
   inline script. Any `button[data-confirm="message"]` is auto-wired to it.
   Available as `window.confirmModal(message, confirmLabel)` from any page script.
+
+---
+
+## Tag pages / backlinks
+
+Tags are first-class entities: clicking a tag chip opens a lightweight,
+**unified** popover summarizing that tag across **both** domains (tasks +
+journal), and **Expand →** deep-links to a dedicated **Tag** tab on the
+analytics page. The feature **unifies by name** (one `work` page merges both
+namespaces) but **marks each occurrence's origin**: ☑ for a task, a section-
+colored ● dot for a journal entry.
+
+### Route
+
+`GET /tag/<name>/overview` — a thin HTTP layer mirroring `journal_analytics_data`
+(read-only JSON, no PRG). Each domain computes its own side; the route merges:
+
+```
+jsonify({
+   "name":    name.lower(),
+   "task":    todo.tag_overview(todo.load(data_file()), name, from, to),
+   "journal": journal.tag_overview(journal.load(journal_file()), name, from, to),
+})
+```
+
+Reads optional `?from=&to=` inclusive date bounds and passes them through. The
+popup omits the range; the deep Tag tab sends its current range. An unknown tag
+returns 200 with an empty-ish payload (zero counts, empty lists).
+
+### Pure helpers (zero cross-import; each domain owns its side)
+
+- **`journal.tag_overview(data, name, start=None, end=None)`** — scans every
+  entry's `{section_id: [names]}`, case-insensitively. Returns `sections`
+  (`[{id, name, color}]`), `entries`/`first`/`last`, `avg_mood`,
+  `baseline_mood` (mean mood over all in-range entries), `uplift`
+  (`avg_mood − baseline_mood`; all mood aggregations ignore null moods),
+  `mood_series`, `dow` (7 counts Mon–Sun), `cooccurring`
+  (`[{name, section_id, count}]`), and `timeline`
+  (`[{date, snippet, sections, mood}]`, newest first).
+- **`todo.tag_overview(data, name, start=None, end=None)`** — scans
+  `active`/`archive`/`expired`, case-insensitively, filtering on each task's
+  representative date (completed → expired_at → created). Returns `exists`
+  (in the `data["tags"]` registry) + `color`, `active`/`completed`/`expired`
+  counts, `first`/`last`, `lead_time_days` (mean `due − completed` in days over
+  completed tasks that had a due date — **positive = finished early**, null when
+  none), `cooccurring` (`[{name, count}]`), and `timeline`
+  (`[{date, title, status, due, completed}]`, newest first).
+
+### Entry points (where the popover triggers; v1)
+
+- **Archive page (`archive.html`)** — every task tag renders as a named
+  `.tag-pop-trigger` chip beside the title (the first-tag title highlight stays
+  as a color cue). Does not disturb the title-toggle details dropdown.
+- **Journal search (`journal_search.html`)** — result `.entry-tag-chip` chips
+  become triggers (marked in `journal-search.js`). Filter checkboxes untouched.
+
+Deferred: active task list, analytics chart labels, sections manage page.
+
+### Analytics restructure (the deep view)
+
+The `/journal/analytics` page gained a top-right **`Journal | Task` lens toggle**
+(`.analytics-lens`, in the new `.analytics-tabrow`). **Overview** always renders
+**outside** the toggle (its content is unchanged here — a deferred follow-up will
+upgrade it). The lens swaps the deeper tabs:
+
+| Lens | Tabs |
+|---|---|
+| Shared (always) | **Overview** · **Tags** · **Tag** |
+| **Journal** | Mood · Consistency · Numeric · Coverage |
+| **Task** | Throughput · Timeliness · Adherence · Difficulty |
+
+The old single **"Tasks"** tab was **refactored** into the Task-lens sub-tabs
+(no chart lost): `task-throughput`/`task-entry-calendar` → Throughput;
+`task-overdue`/`task-numeric-scatter` → Timeliness; `task-adherence` →
+Adherence; `task-difficulty` → Difficulty. The separate **"Task tags"** tab is
+**gone**: its `task-tag-frequency` chart was merged into the cross-domain
+**Tags** tab. Because tags are unified by name across domains, **Tags** is
+`lens: ["journal", "task"]` (shown in both lenses, like the **Tag** detail tab)
+and carries every tag chart in order — the journal tag analytics (frequency,
+trend, per-tag heatmap, co-occurrence) first, then the task-tag analytics
+(`task-tag-frequency`). It has no tab-level `needs`: the journal charts always
+render, and the task-tag chart shows its normal `U.empty(...)` state when there
+are no tasks. `PANELS` entries carry an optional `lens: [...]`; a tab with no
+lens is shared, and the **Tags** and **Tag** tabs list both lenses. The **Tag** tab has a bespoke
+`renderTagDetail()` (outside the `CHARTS` loop): a search box + `<datalist>` of
+all tag names, an async per-tag fetch of `/tag/<name>/overview` (cached per
+name+range), and **lens-aware** rendering (journal half vs task half), reusing
+the `U.*` SVG utilities and the mood-over-time chart pattern. On load it reads
+`#tag=<name>` from the URL hash to open the Tag tab pre-searched; it refetches on
+tag change and on date-range change.
+
+### Files
+
+New: `static/tag-popup.js`. Modified: `journal.py`, `todo.py`, `app.py`,
+`static/analytics.js`, `static/journal-search.js`, `templates/base.html`,
+`templates/archive.html`, `templates/journal_analytics.html`, `static/style.css`
+(`.tag-pop*`, origin marks `.origin-task`/`.origin-dot`, `.analytics-lens*`,
+Tag-detail `.deep-*`/`.callout*`/`.cooc-*`).
 
 ---
 
@@ -300,10 +410,15 @@ What exists today:
 - **`static/analytics.js`** — vanilla SVG charts via a `CHARTS` registry
   (add a chart = append one descriptor). Tabs: Overview, **Mood** (gated on any
   recorded mood via `hasMood`), Consistency (entry calendar, words/entry, gaps,
-  time-of-day), Tags (frequency, trend, per-tag heatmap, co-occurrence), Numeric
-  (line + rolling avg, day-of-week, correlation scatter), Coverage, Tasks.
-  Shared date-range filter; refetches on load and on window focus (10s debounce).
-  Colors read from CSS vars + section hex.
+  time-of-day), the cross-domain **Tags** tab (journal frequency, trend, per-tag
+  heatmap, co-occurrence, then task-tag frequency — shown in both lenses),
+  Numeric (line + rolling avg, day-of-week, correlation scatter), Coverage, plus
+  a **`Journal | Task` lens toggle** that swaps the deeper tabs (the old single
+  "Tasks" tab is now the Task-lens sub-tabs Throughput/Timeliness/Adherence/
+  Difficulty; the former separate "Task tags" tab is folded into the shared Tags
+  tab) and a shared **Tag** detail tab — see the "Tag pages / backlinks" section
+  above. Shared date-range filter; refetches on load and on
+  window focus (10s debounce). Colors read from CSS vars + section hex.
   - **Mood tab**: mood-over-time (fixed 1–7 axis + 7-day rolling avg overlay),
     average mood by day of week, mood distribution histogram, and mood-vs-numeric
     scatter (one small-multiple per numeric section, with a Pearson `r`).

@@ -820,3 +820,56 @@ def test_archive_page_renders_readonly_details(client):
     assert "task-details" in html
     assert "data-readonly" in html
     assert "archived notes" in html
+
+
+# --------------------------------------------------------------------------- #
+# Tag pages / backlinks: GET /tag/<name>/overview
+# --------------------------------------------------------------------------- #
+
+def test_tag_overview_route_merges_task_and_journal(client):
+    import journal
+    # Seed a task tagged 'work'.
+    data = todo.load(_data_path(client))
+    todo.set_tag_color(data, "work", "#5b8dd6")
+    data["active"].append({
+        "id": "t1", "title": "Plan", "due": None,
+        "created": "2026-06-20T09:00:00", "recurrence": None, "tags": ["work"]})
+    todo.save(_data_path(client), data)
+    # Seed a journal entry tagged 'work'.
+    jpath = app_module.app.config["JOURNAL_FILE"]
+    jdata = journal._empty()
+    sec = journal.add_section(jdata, "work", "tag", "#5b8dd6")
+    journal.upsert_entry(jdata, "2026-06-10", "standup", "body",
+                         tags={sec["id"]: ["work"]})
+    journal.save(jpath, jdata)
+
+    resp = client.get("/tag/work/overview")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["name"] == "work"
+    assert "task" in payload and "journal" in payload
+    assert payload["task"]["active"] == 1
+    assert payload["journal"]["entries"] == 1
+
+
+def test_tag_overview_route_honors_date_range(client):
+    import journal
+    jpath = app_module.app.config["JOURNAL_FILE"]
+    jdata = journal._empty()
+    sec = journal.add_section(jdata, "work", "tag", "#5b8dd6")
+    journal.upsert_entry(jdata, "2026-06-01", "old", "body", tags={sec["id"]: ["work"]})
+    journal.upsert_entry(jdata, "2026-06-20", "new", "body", tags={sec["id"]: ["work"]})
+    journal.save(jpath, jdata)
+
+    resp = client.get("/tag/work/overview?from=2026-06-15&to=2026-06-30")
+    payload = resp.get_json()
+    assert payload["journal"]["entries"] == 1
+
+
+def test_tag_overview_route_unknown_tag_is_empty_200(client):
+    resp = client.get("/tag/ghost/overview")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["name"] == "ghost"
+    assert payload["task"]["active"] == 0
+    assert payload["journal"]["entries"] == 0

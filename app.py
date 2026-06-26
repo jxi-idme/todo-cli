@@ -225,6 +225,22 @@ def quit_tab():
     return "", 204
 
 
+@app.route("/tag/<name>/overview")
+def tag_overview(name):
+    """Unified per-tag overview merging both domains (Post/Redirect/Get N/A —
+    read-only JSON). Mirrors journal_analytics_data: each domain computes its
+    own side, the route merges. Optional ?from=&to= inclusive date bounds are
+    passed through. An unknown tag returns 200 with an empty-ish payload."""
+    start = request.args.get("from") or None
+    end = request.args.get("to") or None
+    return jsonify({
+        "name": (name or "").strip().lower(),
+        "task": todo.tag_overview(todo.load(data_file()), name, start, end),
+        "journal": journal.tag_overview(journal.load(journal_file()), name,
+                                        start, end),
+    })
+
+
 @app.route("/")
 def index():
     data = todo.load(data_file())

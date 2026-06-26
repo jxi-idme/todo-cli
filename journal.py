@@ -1001,3 +1001,113 @@ def analytics_payload(data):
     date_range = ({"min": dates[0], "max": dates[-1]}
                   if dates else {"min": None, "max": None})
     return {"sections": sections, "entries": entries, "date_range": date_range}
+
+
+# --------------------------------------------------------------------------- #
+# Tag pages / backlinks: per-tag overview (journal side; pure)
+# --------------------------------------------------------------------------- #
+
+def _entry_has_tag(entry, name):
+    """True if `entry` carries the (normalized) tag `name` under any section."""
+    for names in (entry.get("tags") or {}).values():
+        for raw in names or []:
+            if _normalize_name(raw) == name:
+                return True
+    return False
+
+
+def tag_overview(data, name, start=None, end=None):
+    """Unify everything the journal side knows about one tag `name`.
+
+    Case-insensitive (entry tags are stored normalized). All mood aggregations
+    ignore null moods. `start`/`end` are inclusive YYYY-MM-DD bounds (None =
+    unbounded), mirroring the analytics helpers. Pure — no clock, no I/O.
+
+    Returns:
+      sections      [{id, name, color}] sections where the name appears (in range)
+      entries       count of in-range entries carrying the tag
+      first, last   earliest / latest such entry date (or None)
+      avg_mood      mean mood over tagged entries that have a mood (or None)
+      baseline_mood mean mood over ALL in-range entries with a mood (or None)
+      uplift        avg_mood - baseline_mood (or None)
+      mood_series   [{date, mood}] for tagged entries with a mood, date-sorted
+      dow           7 counts Mon..Sun of tagged entries by weekday
+      cooccurring   [{name, section_id, count}] other tags on the same entries
+      timeline      [{date, snippet, sections, mood}] tagged entries, newest first
+    """
+    name = _normalize_name(name)
+    scoped = _filter_entries_by_date(data.get("entries", []), start, end)
+    tagged = [e for e in scoped if _entry_has_tag(e, name)]
+
+    # Sections where the name appears, in stored section order, deduped.
+    section_ids = set()
+    for e in tagged:
+        for sid, names in (e.get("tags") or {}).items():
+            if any(_normalize_name(n) == name for n in names or []):
+                section_ids.add(sid)
+    sections = [
+        {"id": s["id"], "name": s["name"], "color": s["color"]}
+        for s in data.get("sections", []) if s.get("id") in section_ids
+    ]
+
+    dates = sorted(e["date"] for e in tagged if e.get("date"))
+    first = dates[0] if dates else None
+    last = dates[-1] if dates else None
+
+    tagged_moods = [m for m in (_entry_mood(e) for e in tagged) if m is not None]
+    baseline_moods = [m for m in (_entry_mood(e) for e in scoped) if m is not None]
+    avg_mood = sum(tagged_moods) / len(tagged_moods) if tagged_moods else None
+    baseline_mood = (sum(baseline_moods) / len(baseline_moods)
+                     if baseline_moods else None)
+    uplift = (avg_mood - baseline_mood
+              if avg_mood is not None and baseline_mood is not None else None)
+
+    mood_series = sorted(
+        ({"date": e["date"], "mood": _entry_mood(e)} for e in tagged
+         if _entry_mood(e) is not None),
+        key=lambda d: d["date"])
+
+    dow = [0] * 7
+    for e in tagged:
+        d = datetime.strptime(e["date"], "%Y-%m-%d").date()
+        dow[d.weekday()] += 1
+
+    # Co-occurrence: other tags on the same entries, keyed by (name, section).
+    cooc = {}
+    for e in tagged:
+        for sid, names in (e.get("tags") or {}).items():
+            for raw in names or []:
+                other = _normalize_name(raw)
+                if not other or other == name:
+                    continue
+                key = (other, sid)
+                cooc[key] = cooc.get(key, 0) + 1
+    cooccurring = [
+        {"name": n, "section_id": sid, "count": c}
+        for (n, sid), c in sorted(cooc.items(), key=lambda kv: (-kv[1], kv[0][0]))
+    ]
+
+    timeline = [
+        {
+            "date": e["date"],
+            "snippet": (e.get("body") or "").strip()[:80],
+            "sections": [sid for sid, names in (e.get("tags") or {}).items()
+                         if any(_normalize_name(n) == name for n in names or [])],
+            "mood": _entry_mood(e),
+        }
+        for e in sorted(tagged, key=lambda x: x.get("date", ""), reverse=True)
+    ]
+
+    return {
+        "sections": sections,
+        "entries": len(tagged),
+        "first": first,
+        "last": last,
+        "avg_mood": avg_mood,
+        "baseline_mood": baseline_mood,
+        "uplift": uplift,
+        "mood_series": mood_series,
+        "dow": dow,
+        "cooccurring": cooccurring,
+        "timeline": timeline,
+    }

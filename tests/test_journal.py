@@ -873,3 +873,113 @@ def test_merge_entry_tags_is_non_destructive():
     mentions = {}
     out = journal.merge_entry_tags(base, mentions)
     assert out == {"S1": ["maya"]}
+
+
+# --------------------------------------------------------------------------- #
+# Tag pages / backlinks: journal.tag_overview
+# --------------------------------------------------------------------------- #
+
+def _to_data():
+    """A journal store with two sections and a few entries tagged 'work'."""
+    data = journal._empty()
+    work = journal.add_section(data, "work", "tag", "#5b8dd6")
+    health = journal.add_section(data, "health", "tag", "#6bbf73")
+    wid, hid = work["id"], health["id"]
+    # 2026-06-10: work + meetings, mood 4
+    journal.upsert_entry(data, "2026-06-10", "standup", "long standup body",
+                         tags={wid: ["work", "meetings"]}, mood=4,
+                         now=datetime(2026, 6, 10, 9, 0, 0))
+    # 2026-06-12: work + focus (health), mood 6
+    journal.upsert_entry(data, "2026-06-12", "deep focus", "no meetings finally",
+                         tags={wid: ["work"], hid: ["focus"]}, mood=6,
+                         now=datetime(2026, 6, 12, 9, 0, 0))
+    # 2026-06-14: NOT tagged work, mood 2 (baseline contributor)
+    journal.upsert_entry(data, "2026-06-14", "errands", "groceries",
+                         tags={hid: ["focus"]}, mood=2,
+                         now=datetime(2026, 6, 14, 9, 0, 0))
+    # 2026-06-16: work, no mood
+    journal.upsert_entry(data, "2026-06-16", "planning", "tense planning meeting",
+                         tags={wid: ["work", "meetings"]},
+                         now=datetime(2026, 6, 16, 9, 0, 0))
+    return data, wid, hid
+
+
+def test_journal_tag_overview_sections_and_counts():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "work")
+    assert ov["entries"] == 3
+    assert ov["first"] == "2026-06-10"
+    assert ov["last"] == "2026-06-16"
+    # 'work' lives only under the work section.
+    assert ov["sections"] == [{"id": wid, "name": "work", "color": "#5b8dd6"}]
+
+
+def test_journal_tag_overview_case_insensitive():
+    data, wid, hid = _to_data()
+    assert journal.tag_overview(data, "WORK")["entries"] == 3
+
+
+def test_journal_tag_overview_mood_avg_baseline_uplift():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "work")
+    # work-tagged moods present: 4, 6 -> avg 5.0
+    assert ov["avg_mood"] == 5.0
+    # baseline over all entries with mood: 4, 6, 2 -> 4.0
+    assert ov["baseline_mood"] == 4.0
+    assert ov["uplift"] == 1.0
+
+
+def test_journal_tag_overview_mood_series_only_tagged_with_mood():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "work")
+    assert ov["mood_series"] == [
+        {"date": "2026-06-10", "mood": 4},
+        {"date": "2026-06-12", "mood": 6},
+    ]
+
+
+def test_journal_tag_overview_dow_counts():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "work")
+    # 2026-06-10 Wed, 06-12 Fri, 06-16 Tue -> Mon..Sun
+    assert ov["dow"] == [0, 1, 1, 0, 1, 0, 0]
+
+
+def test_journal_tag_overview_cooccurrence():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "work")
+    # 'meetings' appears on 2 work entries; 'focus' on 1 (different section)
+    names = {(c["name"], c["section_id"]): c["count"] for c in ov["cooccurring"]}
+    assert names[("meetings", wid)] == 2
+    assert names[("focus", hid)] == 1
+    # 'work' itself excluded from its own co-occurrence
+    assert all(c["name"] != "work" for c in ov["cooccurring"])
+
+
+def test_journal_tag_overview_timeline_reverse_chronological():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "work")
+    dates = [r["date"] for r in ov["timeline"]]
+    assert dates == ["2026-06-16", "2026-06-12", "2026-06-10"]
+    row = ov["timeline"][0]
+    assert set(row) >= {"date", "snippet", "sections", "mood"}
+    assert wid in row["sections"]
+
+
+def test_journal_tag_overview_date_filter():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "work", start="2026-06-13", end="2026-06-30")
+    assert ov["entries"] == 1
+    assert ov["first"] == "2026-06-16" and ov["last"] == "2026-06-16"
+
+
+def test_journal_tag_overview_unknown_tag_is_empty():
+    data, wid, hid = _to_data()
+    ov = journal.tag_overview(data, "nonexistent")
+    assert ov["entries"] == 0
+    assert ov["sections"] == []
+    assert ov["first"] is None and ov["last"] is None
+    assert ov["avg_mood"] is None and ov["uplift"] is None
+    assert ov["mood_series"] == []
+    assert ov["cooccurring"] == []
+    assert ov["timeline"] == []

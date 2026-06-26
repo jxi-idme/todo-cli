@@ -795,3 +795,108 @@ def task_payload(data):
     date_range = {"min": dates[0], "max": dates[-1]} if dates else {"min": None, "max": None}
     return {"active": active, "archive": archive, "expired": expired,
             "tags": dict(data.get("tags", {})), "date_range": date_range}
+
+
+# --------------------------------------------------------------------------- #
+# Tag pages / backlinks: per-tag overview (task side; pure)
+# --------------------------------------------------------------------------- #
+
+def _task_has_tag(task, name):
+    """True if `task` carries the (normalized) tag `name`."""
+    return name in (t for t in (task.get("tags") or []))
+
+
+def _task_date(task):
+    """The most representative date for a task occurrence (YYYY-MM-DD):
+    completed, else expired_at, else created — whichever is present."""
+    for field in ("completed", "expired_at", "created"):
+        v = task.get(field)
+        if v:
+            return v[:10]
+    return None
+
+
+def tag_overview(data, name, start=None, end=None):
+    """Unify everything the task side knows about one tag `name`.
+
+    Case-insensitive (task tags are stored normalized). `start`/`end` are
+    inclusive YYYY-MM-DD bounds (None = unbounded), filtered on each task's
+    representative date (completed/expired_at/created). Pure — no clock, no I/O.
+
+    Returns:
+      exists        whether `name` is in the data["tags"] registry
+      color         registered hex color (or the neutral default)
+      active        count of in-range active tasks carrying the tag
+      completed     count of in-range archived (completed) tasks carrying it
+      expired       count of in-range expired tasks carrying it
+      first, last   earliest / latest occurrence date (or None)
+      lead_time_days mean(due - completed) in days over completed tasks that had
+                    a due date. POSITIVE means finished early. Null if none.
+      cooccurring   [{name, count}] other task tags on the same tasks
+      timeline      [{date, title, status, due, completed}], newest first
+    """
+    name = (name or "").strip().lower()
+    registry = data.get("tags", {})
+
+    def scoped(bucket):
+        out = []
+        for t in data.get(bucket, []):
+            if not _task_has_tag(t, name):
+                continue
+            if start or end:
+                if not _in_range(_task_date(t), start, end):
+                    continue
+            out.append(t)
+        return out
+
+    active_tasks = scoped("active")
+    completed_tasks = scoped("archive")
+    expired_tasks = scoped("expired")
+    all_tasks = active_tasks + completed_tasks + expired_tasks
+
+    # Lead time: due - completed, in days, over completed tasks that had a due.
+    leads = []
+    for t in completed_tasks:
+        due, completed = _parse(t.get("due")), _parse(t.get("completed"))
+        if due is not None and completed is not None:
+            leads.append((due - completed).total_seconds() / 86400.0)
+    lead_time_days = sum(leads) / len(leads) if leads else None
+
+    # Co-occurrence: other task tags appearing on the same tasks.
+    cooc = {}
+    for t in all_tasks:
+        for other in t.get("tags") or []:
+            if other == name:
+                continue
+            cooc[other] = cooc.get(other, 0) + 1
+    cooccurring = [
+        {"name": n, "count": c}
+        for n, c in sorted(cooc.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+    def row(t, status):
+        return {"date": _task_date(t), "title": t.get("title", ""),
+                "status": status, "due": t.get("due"),
+                "completed": t.get("completed")}
+
+    rows = ([row(t, "active") for t in active_tasks]
+            + [row(t, "completed") for t in completed_tasks]
+            + [row(t, "expired") for t in expired_tasks])
+    rows.sort(key=lambda r: r["date"] or "", reverse=True)
+
+    dates = sorted(d for d in (_task_date(t) for t in all_tasks) if d)
+    first = dates[0] if dates else None
+    last = dates[-1] if dates else None
+
+    return {
+        "exists": name in registry,
+        "color": registry.get(name, DEFAULT_TAG_COLOR),
+        "active": len(active_tasks),
+        "completed": len(completed_tasks),
+        "expired": len(expired_tasks),
+        "first": first,
+        "last": last,
+        "lead_time_days": lead_time_days,
+        "cooccurring": cooccurring,
+        "timeline": rows,
+    }

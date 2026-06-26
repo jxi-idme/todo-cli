@@ -1100,3 +1100,111 @@ def test_refresh_recurring_copies_notes_and_resets_subtasks():
     # Deep copy: mutating the spawned subtask must not touch the archived one.
     spawned["subtasks"][1]["done"] = True
     assert archived["subtasks"][1]["done"] is False
+
+
+# --------------------------------------------------------------------------- #
+# Tag pages / backlinks: todo.tag_overview
+# --------------------------------------------------------------------------- #
+
+def _tag_data():
+    """A task store with active/archive/expired tasks tagged 'work'."""
+    data = todo._empty()
+    todo.set_tag_color(data, "work", "#5b8dd6")
+    todo.set_tag_color(data, "home", "#6bbf73")
+    # active task, tagged work + home
+    data["active"].append({
+        "id": "a1", "title": "Plan sprint", "due": "2026-06-30T17:00:00",
+        "created": "2026-06-20T09:00:00", "recurrence": None,
+        "tags": ["work", "home"]})
+    # completed early: due 06-25, completed 06-23 -> 2 days early
+    data["archive"].append({
+        "id": "c1", "title": "Finish report", "due": "2026-06-25T17:00:00",
+        "completed": "2026-06-23T17:00:00", "created": "2026-06-15T09:00:00",
+        "recurrence": None, "tags": ["work"]})
+    # completed late: due 06-20, completed 06-22 -> 2 days late
+    data["archive"].append({
+        "id": "c2", "title": "Review PRs", "due": "2026-06-20T17:00:00",
+        "completed": "2026-06-22T17:00:00", "created": "2026-06-10T09:00:00",
+        "recurrence": None, "tags": ["work", "home"]})
+    # completed, no due -> excluded from lead-time
+    data["archive"].append({
+        "id": "c3", "title": "Misc", "due": None,
+        "completed": "2026-06-21T17:00:00", "created": "2026-06-10T09:00:00",
+        "recurrence": None, "tags": ["work"]})
+    # expired
+    data["expired"].append({
+        "id": "e1", "title": "Missed thing", "due": "2026-06-18T17:00:00",
+        "expired_at": "2026-06-19T00:00:00", "created": "2026-06-12T09:00:00",
+        "recurrence": "daily", "tags": ["work"]})
+    return data
+
+
+def test_todo_tag_overview_counts_across_buckets():
+    ov = todo.tag_overview(_tag_data(), "work")
+    assert ov["exists"] is True
+    assert ov["color"] == "#5b8dd6"
+    assert ov["active"] == 1
+    assert ov["completed"] == 3
+    assert ov["expired"] == 1
+
+
+def test_todo_tag_overview_case_insensitive():
+    assert todo.tag_overview(_tag_data(), "WORK")["completed"] == 3
+
+
+def test_todo_tag_overview_lead_time_positive_is_early():
+    ov = todo.tag_overview(_tag_data(), "work")
+    # c1: 2 days early (+2); c2: 2 days late (-2); c3: no due -> excluded.
+    # mean(+2, -2) = 0.0
+    assert ov["lead_time_days"] == 0.0
+
+
+def test_todo_tag_overview_lead_time_null_when_no_due():
+    data = todo._empty()
+    todo.set_tag_color(data, "x", "#5b8dd6")
+    data["archive"].append({
+        "id": "n", "title": "no due", "due": None,
+        "completed": "2026-06-21T17:00:00", "created": "2026-06-10T09:00:00",
+        "recurrence": None, "tags": ["x"]})
+    assert todo.tag_overview(data, "x")["lead_time_days"] is None
+
+
+def test_todo_tag_overview_cooccurrence():
+    ov = todo.tag_overview(_tag_data(), "work")
+    names = {c["name"]: c["count"] for c in ov["cooccurring"]}
+    # 'home' shares a1 (active) and c2 (archive) -> 2; 'work' excluded
+    assert names.get("home") == 2
+    assert all(c["name"] != "work" for c in ov["cooccurring"])
+
+
+def test_todo_tag_overview_timeline():
+    ov = todo.tag_overview(_tag_data(), "work")
+    assert len(ov["timeline"]) == 5
+    row = ov["timeline"][0]
+    assert set(row) >= {"date", "title", "status", "due", "completed"}
+    statuses = {r["title"]: r["status"] for r in ov["timeline"]}
+    assert statuses["Plan sprint"] == "active"
+    assert statuses["Finish report"] == "completed"
+    assert statuses["Missed thing"] == "expired"
+
+
+def test_todo_tag_overview_first_last():
+    ov = todo.tag_overview(_tag_data(), "work")
+    assert ov["first"] is not None and ov["last"] is not None
+
+
+def test_todo_tag_overview_date_filter():
+    ov = todo.tag_overview(_tag_data(), "work",
+                           start="2026-06-23", end="2026-06-30")
+    # only c1 (completed 06-23) among the dated occurrences within range
+    assert ov["completed"] == 1
+
+
+def test_todo_tag_overview_unknown_tag_empty():
+    ov = todo.tag_overview(_tag_data(), "ghost")
+    assert ov["exists"] is False
+    assert ov["active"] == 0 and ov["completed"] == 0 and ov["expired"] == 0
+    assert ov["lead_time_days"] is None
+    assert ov["cooccurring"] == []
+    assert ov["timeline"] == []
+    assert ov["first"] is None and ov["last"] is None
