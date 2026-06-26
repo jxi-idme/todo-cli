@@ -241,8 +241,8 @@ management), `journal_sections_archive.html` (archived sections & tags).
 
 Tags are first-class entities: clicking a tag chip opens a lightweight,
 **unified** popover summarizing that tag across **both** domains (tasks +
-journal), and **Expand →** deep-links to a dedicated **Tag** tab on the
-analytics page. The feature **unifies by name** (one `work` page merges both
+journal), and **Expand →** deep-links to the **Tags** tab on the
+analytics page (pre-searched). The feature **unifies by name** (one `work` page merges both
 namespaces) but **marks each occurrence's origin**: ☑ for a task, a section-
 colored ● dot for a journal entry.
 
@@ -301,7 +301,7 @@ upgrade it). The lens swaps the deeper tabs:
 
 | Lens | Tabs |
 |---|---|
-| Shared (always) | **Overview** · **Tags** · **Tag** |
+| Shared (always) | **Overview** · **Tags** |
 | **Journal** | Mood · Consistency · Numeric · Coverage |
 | **Task** | Throughput · Timeliness · Adherence · Difficulty |
 
@@ -317,13 +317,19 @@ trend, per-tag heatmap, co-occurrence) first, then the task-tag analytics
 (`task-tag-frequency`). It has no tab-level `needs`: the journal charts always
 render, and the task-tag chart shows its normal `U.empty(...)` state when there
 are no tasks. `PANELS` entries carry an optional `lens: [...]`; a tab with no
-lens is shared, and the **Tags** and **Tag** tabs list both lenses. The **Tag** tab has a bespoke
-`renderTagDetail()` (outside the `CHARTS` loop): a search box + `<datalist>` of
-all tag names, an async per-tag fetch of `/tag/<name>/overview` (cached per
-name+range), and **lens-aware** rendering (journal half vs task half), reusing
-the `U.*` SVG utilities and the mood-over-time chart pattern. On load it reads
-`#tag=<name>` from the URL hash to open the Tag tab pre-searched; it refetches on
-tag change and on date-range change.
+lens is shared, and the **Tags** tab lists both lenses. The **Tags** tab has a
+bespoke `renderTagsTab()` (outside the `CHARTS` loop): a search box on top, and
+below it **the all-tags overview by default** (the aggregate `panel: "tags"`
+charts) which a **per-tag detail replaces once a tag is searched** (cleared
+search returns to the overview). The search box has a custom **live-preview
+dropdown** scoped to the active lens — the **Journal** lens lists only journal
+(section) tags, the **Task** lens only task-registry tags; matches update as you
+type, each origin-marked (☑ task / ● journal), with arrow-key + click select,
+and the preview **commits and hides on Enter**. Per-tag detail is an async fetch
+of `/tag/<name>/overview` (cached per name+range), rendered **lens-aware**
+(journal half vs task half), reusing the `U.*` SVG utilities and the
+mood-over-time chart pattern. On load it reads `#tag=<name>` from the URL hash to
+open the Tags tab pre-searched; it refetches on tag change and date-range change.
 
 ### Files
 

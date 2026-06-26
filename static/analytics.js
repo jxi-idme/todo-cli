@@ -21,7 +21,7 @@
 
   // Panel definitions. `needs` optionally gates a tab's visibility.
   // `lens` scopes a tab to one lens; tabs with no lens are shared (Overview),
-  // and a tab can list multiple lenses (the Tag detail tab lives in both).
+  // and a tab can list multiple lenses (the Tags tab lives in both).
   var PANELS = [
     { id: "overview", label: "Overview" },
     // Journal lens
@@ -35,8 +35,6 @@
     { id: "timeliness", label: "Timeliness", lens: ["task"], needs: hasTasks },
     { id: "adherence", label: "Adherence", lens: ["task"], needs: hasTasks },
     { id: "difficulty", label: "Difficulty", lens: ["task"], needs: hasTasks },
-    // Shared deep tag detail (lens-aware rendering)
-    { id: "tag", label: "Tag", lens: ["journal", "task"] },
   ];
 
   // Filled by the chart sections (Tasks 11-13).
@@ -1495,7 +1493,7 @@
     return sxy / Math.sqrt(sxx * syy);
   }
 
-  // ===================== Tag detail tab (lens-aware) ====================== //
+  // ===================== Tags tab (search + overview) ==================== //
   // A dedicated, bespoke renderer (not part of the CHARTS loop): a search box +
   // datalist of all known tag names, an async per-tag fetch of
   // /tag/<name>/overview, and lens-aware rendering (journal half vs task half).
@@ -1506,17 +1504,6 @@
     if (!d) return "";
     var p = String(d).split("-");
     return p.length < 3 ? d : TAG_MON[parseInt(p[1], 10) - 1] + " " + p[2];
-  }
-
-  // Every known tag name: journal section tags + task tag registry.
-  function allTagNames() {
-    var set = {};
-    (_data.sections || []).forEach(function (s) {
-      (s.tags || []).forEach(function (t) { set[t] = true; });
-    });
-    var tt = _data.tasks && _data.tasks.tags;
-    if (tt) Object.keys(tt).forEach(function (t) { set[t] = true; });
-    return Object.keys(set).sort();
   }
 
   function originTaskMark() {
@@ -1798,36 +1785,124 @@
     tagCoocList(tagPanel(host, "Co-occurring task tags"), coocRows, c, true);
   }
 
-  function renderTagDetail(host, c) {
-    // Search box + datalist.
+  function renderTagsTab(host, c) {
+    // Search box with a custom live-preview dropdown. We replace the native
+    // <datalist> so we control exactly when the preview shows and hides: it
+    // updates live as you type and disappears once a tag is committed (Enter,
+    // click, or arrow + Enter). Works the same in both the journal and task
+    // lenses (the rendered detail below is lens-aware via run()).
     var searchPanel = tagPanel(host, null);
     var row = document.createElement("div");
     row.className = "tag-search-row";
     var label = document.createElement("label");
     label.textContent = "tag"; label.setAttribute("for", "tag-search-input");
+    var field = document.createElement("div");
+    field.className = "tag-search-field";
     var input = document.createElement("input");
     input.className = "tag-search"; input.id = "tag-search-input";
     input.type = "text"; input.placeholder = "search a tag…";
-    input.setAttribute("list", "tag-search-list");
+    input.setAttribute("autocomplete", "off");
     input.value = _tagQuery;
-    var list = document.createElement("datalist");
-    list.id = "tag-search-list";
-    allTagNames().forEach(function (n) {
-      var opt = document.createElement("option");
-      opt.value = n; list.appendChild(opt);
-    });
-    row.appendChild(label); row.appendChild(input); row.appendChild(list);
+    var preview = document.createElement("ul");
+    preview.className = "tag-search-preview";
+    preview.hidden = true;
+    field.appendChild(input); field.appendChild(preview);
+    row.appendChild(label); row.appendChild(field);
     searchPanel.appendChild(row);
 
     var resultsHost = document.createElement("div");
     resultsHost.className = "tag-detail-results";
     host.appendChild(resultsHost);
 
+    // name -> {task, color}: drives the origin marks beside each preview
+    // option. Scoped to the active lens — the Journal lens lists only journal
+    // (section) tags; the Task lens lists only task-registry tags.
+    var info = (function () {
+      var idx = {};
+      if (_lens === "task") {
+        var tt = _data.tasks && _data.tasks.tags;
+        if (tt) Object.keys(tt).forEach(function (t) {
+          idx[t] = { task: true, color: null };
+        });
+      } else {
+        (_data.sections || []).forEach(function (s) {
+          (s.tags || []).forEach(function (t) {
+            if (!idx[t]) idx[t] = { task: false, color: null };
+            if (idx[t].color == null) idx[t].color = s.color;
+          });
+        });
+      }
+      return idx;
+    })();
+    var names = Object.keys(info).sort();
+    var _hi = -1;   // highlighted preview option index
+
+    function matches(q) {
+      q = (q || "").trim().toLowerCase();
+      return names.filter(function (n) { return n.indexOf(q) !== -1; });
+    }
+
+    function hidePreview() { preview.hidden = true; preview.innerHTML = ""; _hi = -1; }
+
+    function setHi(i) {
+      var opts = preview.querySelectorAll(".tag-search-opt");
+      if (_hi >= 0 && opts[_hi]) opts[_hi].classList.remove("active");
+      _hi = i;
+      if (_hi >= 0 && opts[_hi]) opts[_hi].classList.add("active");
+    }
+
+    function showPreview(q) {
+      var ms = matches(q).slice(0, 10);
+      preview.innerHTML = ""; _hi = -1;
+      if (!ms.length) { preview.hidden = true; return; }
+      ms.forEach(function (n, i) {
+        var li = document.createElement("li");
+        li.className = "tag-search-opt"; li.dataset.name = n;
+        var nf = info[n] || {};
+        if (nf.task) li.appendChild(originTaskMark());
+        if (nf.color != null) li.appendChild(originDot(nf.color));
+        li.appendChild(document.createTextNode(" " + n));
+        li.addEventListener("mousedown", function (e) {
+          e.preventDefault();   // beat the input's blur so the click registers
+          commit(n);
+        });
+        li.addEventListener("mousemove", function () { setHi(i); });
+        preview.appendChild(li);
+      });
+      preview.hidden = false;
+    }
+
+    function commit(name) { input.value = name; hidePreview(); run(name); }
+
+    // Default view (no search): the aggregate tag charts for the active lens
+    // (the CHARTS registered under panel "tags"), rendered like a normal panel.
+    function renderAggregateTags() {
+      var entries = filterEntries();
+      var c = colors();
+      var charts = CHARTS.filter(function (ch) { return ch.panel === "tags"; });
+      if (!charts.length) { U.empty(resultsHost, "No tag charts available."); return; }
+      charts.forEach(function (ch) {
+        var panel = document.createElement("div");
+        panel.className = "analytics-panel";
+        panel.id = "chart-" + ch.id;
+        var h3 = document.createElement("h3");
+        h3.textContent = ch.title;
+        panel.appendChild(h3);
+        try {
+          ch.render(panel, entries, _data.sections, c);
+        } catch (err) {
+          U.empty(panel, "Could not render this chart.");
+          if (window.console) console.error(ch.id, err);
+        }
+        resultsHost.appendChild(panel);
+      });
+    }
+
     function run(name) {
       _tagQuery = (name || "").trim().toLowerCase();
       resultsHost.innerHTML = "";
-      if (!_tagQuery) {
-        U.empty(resultsHost, "Type or pick a tag above to see its detail.");
+      if (!_tagQuery) {            // no search → show the all-tags overview
+        renderAggregateTags();
         return;
       }
       U.empty(resultsHost, "Loading…");
@@ -1843,16 +1918,25 @@
       });
     }
 
-    var _debounce = null;
-    input.addEventListener("input", function () {
-      clearTimeout(_debounce);
-      var v = input.value;
-      _debounce = setTimeout(function () { run(v); }, 250);
+    input.addEventListener("input", function () { showPreview(input.value); });
+    input.addEventListener("focus", function () { showPreview(input.value); });
+    input.addEventListener("blur", function () { setTimeout(hidePreview, 150); });
+    input.addEventListener("keydown", function (e) {
+      var opts = preview.hidden ? [] : preview.querySelectorAll(".tag-search-opt");
+      if (e.key === "ArrowDown" && opts.length) {
+        e.preventDefault(); setHi((_hi + 1) % opts.length);
+      } else if (e.key === "ArrowUp" && opts.length) {
+        e.preventDefault(); setHi((_hi - 1 + opts.length) % opts.length);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (_hi >= 0 && opts[_hi]) commit(opts[_hi].dataset.name);
+        else { hidePreview(); run(input.value); }   // commit typed text; hide preview
+      } else if (e.key === "Escape") {
+        hidePreview();
+      }
     });
-    input.addEventListener("change", function () { run(input.value); });
 
-    if (_tagQuery) run(_tagQuery);
-    else U.empty(resultsHost, "Type or pick a tag above to see its detail.");
+    run(_tagQuery);   // empty → all-tags overview; set → that tag's detail
   }
 
   // Fetch /tag/<name>/overview honoring the current date range; cached per
@@ -1950,9 +2034,10 @@
     var entries = filterEntries();
     var c = colors();
 
-    // The Tag detail tab has bespoke interaction, so it bypasses the CHARTS loop.
-    if (_activeTab === "tag") {
-      renderTagDetail(host, c);
+    // The Tags tab has bespoke interaction (search + all-tags overview that the
+    // search results replace), so it bypasses the generic CHARTS loop.
+    if (_activeTab === "tags") {
+      renderTagsTab(host, c);
       return;
     }
 
@@ -1979,12 +2064,12 @@
     });
   }
 
-  // Read #tag=<name> from the URL hash: open the Tag tab pre-searched.
+  // Read #tag=<name> from the URL hash: open the Tags tab pre-searched.
   function readTagHash() {
     var m = /(?:^|[#&])tag=([^&]+)/.exec(window.location.hash || "");
     if (m) {
       _tagQuery = decodeURIComponent(m[1]).trim().toLowerCase();
-      _activeTab = "tag";
+      _activeTab = "tags";
     }
   }
 
