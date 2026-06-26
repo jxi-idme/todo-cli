@@ -1151,10 +1151,13 @@ h2 {
 
 .analytics { margin-top: 1rem; }
 
-/* Tab bar — same segmented look as the .kind-toggle control. */
+/* Tab bar — same segmented look as the .kind-toggle control.
+   Kept to a single line: tabs flex to share the row, lens toggle pins right. */
 .analytics-tabs {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
@@ -1165,9 +1168,12 @@ h2 {
   color: var(--muted);
   border: none;
   border-left: 1px solid var(--border);
-  padding: 0.5rem 0.9rem;
+  padding: 0.5rem 0.5rem;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  line-height: 1.1;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
   cursor: pointer;
 }
 .analytics-tab:first-child { border-left: none; }
@@ -1735,11 +1741,12 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* ---- analytics lens toggle (top-right of the tab row) ---- */
 .analytics-tabrow {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 1rem; flex-wrap: wrap;
+  display: flex; align-items: stretch; justify-content: space-between;
+  gap: 0.5rem; flex-wrap: nowrap;
 }
 .analytics-lens {
   display: inline-flex;
+  flex: 0 0 auto;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
@@ -1748,7 +1755,8 @@ input[type="number"]::-webkit-inner-spin-button {
 .analytics-lens-btn {
   background: var(--panel); color: var(--muted);
   border: none; border-left: 1px solid var(--border);
-  padding: 0.5rem 0.9rem; font: inherit; font-size: 0.85rem; cursor: pointer;
+  padding: 0.5rem 0.6rem; font: inherit; font-size: 0.8rem;
+  line-height: 1.1; letter-spacing: -0.2px; white-space: nowrap; cursor: pointer;
 }
 .analytics-lens-btn:first-child { border-left: none; }
 .analytics-lens-btn:hover { color: var(--text); }
