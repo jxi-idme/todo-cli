@@ -14,17 +14,30 @@
   var _data = { sections: [], entries: [], date_range: { min: null, max: null } };
   var _from = null, _to = null;
   var _activeTab = "overview";
+  var _lens = "journal";    // "journal" | "task" — swaps the deeper tab set
   var _lastFetch = 0;
+  var _tagQuery = "";       // current tag in the Tag detail tab
+  var _tagCache = {};       // {name: payload} cache for /tag/<name>/overview
 
   // Panel definitions. `needs` optionally gates a tab's visibility.
+  // `lens` scopes a tab to one lens; tabs with no lens are shared (Overview),
+  // and a tab can list multiple lenses (the Tag detail tab lives in both).
   var PANELS = [
     { id: "overview", label: "Overview" },
-    { id: "mood", label: "Mood", needs: hasMood },
-    { id: "consistency", label: "Consistency" },
-    { id: "tags", label: "Tags" },
-    { id: "numeric", label: "Numeric", needs: hasNumeric },
-    { id: "coverage", label: "Coverage" },
-    { id: "tasks", label: "Tasks", needs: hasTasks },
+    // Journal lens
+    { id: "mood", label: "Mood", lens: ["journal"], needs: hasMood },
+    { id: "consistency", label: "Consistency", lens: ["journal"] },
+    { id: "tags", label: "Tags", lens: ["journal"] },
+    { id: "numeric", label: "Numeric", lens: ["journal"], needs: hasNumeric },
+    { id: "coverage", label: "Coverage", lens: ["journal"] },
+    // Task lens (the old single "Tasks" tab, refactored into sub-tabs)
+    { id: "throughput", label: "Throughput", lens: ["task"], needs: hasTasks },
+    { id: "timeliness", label: "Timeliness", lens: ["task"], needs: hasTasks },
+    { id: "adherence", label: "Adherence", lens: ["task"], needs: hasTasks },
+    { id: "difficulty", label: "Difficulty", lens: ["task"], needs: hasTasks },
+    { id: "tasktags", label: "Task tags", lens: ["task"], needs: hasTasks },
+    // Shared deep tag detail (lens-aware rendering)
+    { id: "tag", label: "Tag", lens: ["journal", "task"] },
   ];
 
   // Filled by the chart sections (Tasks 11-13).
@@ -1059,7 +1072,7 @@
 
   // --- Tasks: completion throughput ---
   CHARTS.push({
-    id: "task-throughput", panel: "tasks", title: "Tasks completed per day",
+    id: "task-throughput", panel: "throughput", title: "Tasks completed per day",
     render: function (container, entries, sections, c) {
       var byDay = taskThroughput();
       var days = Object.keys(byDay).sort();
@@ -1082,7 +1095,7 @@
 
   // --- Tasks: overdue (completed late) + expiry ---
   CHARTS.push({
-    id: "task-overdue", panel: "tasks", title: "On-time vs late & expired",
+    id: "task-overdue", panel: "timeliness", title: "On-time vs late & expired",
     render: function (container, entries, sections, c) {
       var t = _data.tasks || { archive: [], expired: [] };
       function inR(d) { return d && (!_from || d >= _from) && (!_to || d <= _to); }
@@ -1111,7 +1124,7 @@
 
   // --- Tasks: recurring adherence ---
   CHARTS.push({
-    id: "task-adherence", panel: "tasks", title: "Recurring-task adherence",
+    id: "task-adherence", panel: "adherence", title: "Recurring-task adherence",
     render: function (container, entries, sections, c) {
       var t = _data.tasks || { archive: [], expired: [] };
       function inR(d) { return d && (!_from || d >= _from) && (!_to || d <= _to); }
@@ -1132,7 +1145,7 @@
 
   // --- Tasks: difficulty breakdown ---
   CHARTS.push({
-    id: "task-difficulty", panel: "tasks", title: "Difficulty of completed tasks",
+    id: "task-difficulty", panel: "difficulty", title: "Difficulty of completed tasks",
     render: function (container, entries, sections, c) {
       var t = _data.tasks || { archive: [] };
       function inR(d) { return d && (!_from || d >= _from) && (!_to || d <= _to); }
@@ -1158,7 +1171,7 @@
 
   // --- Tasks: task-tag frequency ---
   CHARTS.push({
-    id: "task-tag-frequency", panel: "tasks", title: "Task tag frequency",
+    id: "task-tag-frequency", panel: "tasktags", title: "Task tag frequency",
     render: function (container, entries, sections, c) {
       var t = _data.tasks || { archive: [], active: [], expired: [], tags: {} };
       function inR(d) { return !d || ((!_from || d >= _from) && (!_to || d <= _to)); }
@@ -1188,7 +1201,7 @@
   // one small-multiple per numeric section (like `numeric-line`/`tag-frequency`
   // iterate). x = that day's completed-task count; y = the journal numeric.
   CHARTS.push({
-    id: "task-numeric-scatter", panel: "tasks",
+    id: "task-numeric-scatter", panel: "timeliness",
     title: "Tasks completed vs. journal number",
     render: function (container, entries, sections, c) {
       var nums = U.numericSections(sections);
@@ -1242,7 +1255,7 @@
   // Mirrors `calendar-heatmap` + buildMonthGrid; entry days get the standard
   // amber dot (present), task-completion days get an offset --accent-dim dot.
   CHARTS.push({
-    id: "task-entry-calendar", panel: "tasks", title: "Entries & task completions",
+    id: "task-entry-calendar", panel: "throughput", title: "Entries & task completions",
     render: function (container, entries, sections, c) {
       var present = {};
       uniqueDates(entries).forEach(function (d) { present[d] = true; });
@@ -1481,6 +1494,381 @@
     return sxy / Math.sqrt(sxx * syy);
   }
 
+  // ===================== Tag detail tab (lens-aware) ====================== //
+  // A dedicated, bespoke renderer (not part of the CHARTS loop): a search box +
+  // datalist of all known tag names, an async per-tag fetch of
+  // /tag/<name>/overview, and lens-aware rendering (journal half vs task half).
+
+  var TAG_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function tagShortDate(d) {
+    if (!d) return "";
+    var p = String(d).split("-");
+    return p.length < 3 ? d : TAG_MON[parseInt(p[1], 10) - 1] + " " + p[2];
+  }
+
+  // Every known tag name: journal section tags + task tag registry.
+  function allTagNames() {
+    var set = {};
+    (_data.sections || []).forEach(function (s) {
+      (s.tags || []).forEach(function (t) { set[t] = true; });
+    });
+    var tt = _data.tasks && _data.tasks.tags;
+    if (tt) Object.keys(tt).forEach(function (t) { set[t] = true; });
+    return Object.keys(set).sort();
+  }
+
+  function originTaskMark() {
+    var s = document.createElement("span");
+    s.className = "origin-task";
+    s.textContent = "☑";   // ☑
+    return s;
+  }
+  function originDot(color) {
+    var s = document.createElement("span");
+    s.className = "origin-dot";
+    if (color) s.style.setProperty("--dot", color);
+    return s;
+  }
+  function sectionColorOf(sid) {
+    var s = (_data.sections || []).filter(function (x) { return x.id === sid; })[0];
+    return s ? s.color : null;
+  }
+  function sectionNameOf(sid) {
+    var s = (_data.sections || []).filter(function (x) { return x.id === sid; })[0];
+    return s ? s.name : "section";
+  }
+
+  // A panel container helper.
+  function tagPanel(host, title) {
+    var panel = document.createElement("div");
+    panel.className = "analytics-panel";
+    if (title) {
+      var h3 = document.createElement("h3");
+      h3.textContent = title;
+      panel.appendChild(h3);
+    }
+    host.appendChild(panel);
+    return panel;
+  }
+
+  // Mood-over-time chart for the tag (mirrors the mood-over-time chart pattern).
+  function tagMoodChart(panel, series, c) {
+    if (!series || series.length < 2) {
+      U.empty(panel, "Not enough mood data for this tag.");
+      return;
+    }
+    var w = 600, h = 180, pad = 30;
+    var svg = U.svg(w, h);
+    var min = 1, max = 7, span = max - min;
+    U.drawGrid(svg, pad, 10, w - pad - 10, h - pad - 10, 6, c);
+    function ptAt(i, v) {
+      var x = series.length === 1 ? pad + (w - pad - 10) / 2
+                                  : pad + ((w - pad - 10) * i) / (series.length - 1);
+      var y = 10 + (h - pad - 10) * (1 - (v - min) / span);
+      return { x: x, y: y };
+    }
+    var vals = series.map(function (s) { return s.mood; });
+    var roll = rollingAvg(vals, 7).map(function (v, i) { return ptAt(i, v); });
+    var pts = series.map(function (s, i) { return ptAt(i, s.mood); });
+    U.drawLine(svg, roll, U.colorMix(c.muted, 90), 1);
+    U.drawLine(svg, pts, c.accent, 1.5);
+    pts.forEach(function (p) { U.drawDot(svg, p.x, p.y, 2, c.accent); });
+    U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10,
+               [series[0].date, series[series.length - 1].date], c);
+    U.text(svg, 0, 14, "7", c.muted, { size: 9 });
+    U.text(svg, 0, h - pad + 2, "1", c.muted, { size: 9 });
+    panel.appendChild(svg);
+  }
+
+  // Journal day-of-week bars from a 7-count array (Mon..Sun).
+  function tagDowChart(panel, dow, color, c) {
+    var names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    var max = Math.max.apply(null, dow) || 1;
+    if (!dow.some(function (n) { return n > 0; })) {
+      U.empty(panel, "No entries for this tag in range."); return;
+    }
+    var w = 600, h = 170, pad = 30;
+    var svg = U.svg(w, h);
+    var bw = (w - pad - 10) / 7;
+    dow.forEach(function (n, i) {
+      var bh = (h - pad - 10) * (n / max);
+      U.drawBar(svg, pad + i * bw + 3, 10 + (h - pad - 10) - bh, bw - 6, bh,
+                color || c.accent);
+      if (n) U.text(svg, pad + i * bw + bw / 2, 10 + (h - pad - 10) - bh - 3,
+                    String(n), c.muted, { anchor: "middle", size: 9 });
+    });
+    U.drawAxis(svg, pad, 10, w - pad - 10, h - pad - 10, names, c);
+    panel.appendChild(svg);
+  }
+
+  // Horizontal co-occurrence bar list. `rows` = [{name, count, color}].
+  function tagCoocList(panel, rows, c, taskOrigin) {
+    if (!rows.length) { U.empty(panel, "No co-occurring tags."); return; }
+    var max = rows[0].count || 1;
+    var list = document.createElement("div");
+    list.className = "cooc-list";
+    rows.slice(0, 10).forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "cooc-row";
+      var nm = document.createElement("span");
+      nm.className = "cooc-name";
+      nm.appendChild(taskOrigin ? originTaskMark() : originDot(r.color));
+      nm.appendChild(document.createTextNode(" " + r.name));
+      var track = document.createElement("span");
+      track.className = "cooc-track";
+      var fill = document.createElement("span");
+      fill.className = "cooc-fill";
+      fill.style.width = Math.round((r.count / max) * 100) + "%";
+      track.appendChild(fill);
+      var cnt = document.createElement("span");
+      cnt.className = "cooc-count";
+      cnt.textContent = r.count;
+      row.appendChild(nm); row.appendChild(track); row.appendChild(cnt);
+      list.appendChild(row);
+    });
+    panel.appendChild(list);
+  }
+
+  function renderTagJournal(host, journal, c) {
+    // Header stats.
+    var head = tagPanel(host, null);
+    var hr = document.createElement("div");
+    hr.className = "deep-head";
+    var nm = document.createElement("span");
+    nm.className = "deep-tagname"; nm.textContent = _tagQuery;
+    hr.appendChild(nm);
+    (journal.sections || []).forEach(function (s) {
+      var mark = document.createElement("span");
+      mark.className = "pop-origin-mark";
+      mark.appendChild(originDot(s.color));
+      mark.appendChild(document.createTextNode(" journal · " + s.name));
+      hr.appendChild(mark);
+    });
+    head.appendChild(hr);
+    var grid = document.createElement("div");
+    grid.className = "stat-cards";
+    statCard(grid, journal.entries, "entries",
+             (journal.first && journal.last)
+               ? journal.first + " → " + journal.last : null);
+    statCard(grid, journal.avg_mood != null ? U.fmt(journal.avg_mood) : null,
+             "avg mood",
+             journal.uplift != null
+               ? (journal.uplift > 0 ? "▲ +" : "▼ ") + U.fmt(journal.uplift) + " vs overall"
+               : null);
+    head.appendChild(grid);
+
+    // Timeline (entry rows link to /journal/<date>).
+    var tl = tagPanel(host, "Journal timeline");
+    if ((journal.timeline || []).length) {
+      var ul = document.createElement("ul");
+      ul.className = "timeline";
+      journal.timeline.forEach(function (r) {
+        var li = document.createElement("li");
+        li.className = "tl-row";
+        var mark = document.createElement("span");
+        mark.className = "tl-mark";
+        mark.appendChild(originDot(sectionColorOf((r.sections || [])[0])));
+        li.appendChild(mark);
+        var a = document.createElement("a");
+        a.className = "tl-date"; a.href = "/journal/" + r.date;
+        a.textContent = tagShortDate(r.date);
+        li.appendChild(a);
+        var tx = document.createElement("span");
+        tx.className = "tl-text";
+        tx.textContent = r.snippet || "(entry)";
+        li.appendChild(tx);
+        ul.appendChild(li);
+      });
+      tl.appendChild(ul);
+    } else {
+      U.empty(tl, "No journal entries carry this tag in range.");
+    }
+
+    // Mood when present.
+    tagMoodChart(tagPanel(host, "Mood when present"), journal.mood_series, c);
+    // Journal day-of-week.
+    tagDowChart(tagPanel(host, "Journal day-of-week"), journal.dow || [0,0,0,0,0,0,0],
+                (journal.sections || [])[0] ? journal.sections[0].color : null, c);
+    // Co-occurrence.
+    var coocRows = (journal.cooccurring || []).map(function (x) {
+      return { name: x.name, count: x.count, color: sectionColorOf(x.section_id) };
+    });
+    tagCoocList(tagPanel(host, "Co-occurring journal tags"), coocRows, c, false);
+  }
+
+  function renderTagTask(host, task, c) {
+    // Header stats.
+    var head = tagPanel(host, null);
+    var hr = document.createElement("div");
+    hr.className = "deep-head";
+    var nm = document.createElement("span");
+    nm.className = "deep-tagname"; nm.textContent = _tagQuery;
+    hr.appendChild(nm);
+    var mark = document.createElement("span");
+    mark.className = "pop-origin-mark";
+    mark.appendChild(originTaskMark());
+    mark.appendChild(document.createTextNode(" task tag"));
+    hr.appendChild(mark);
+    head.appendChild(hr);
+    var grid = document.createElement("div");
+    grid.className = "stat-cards";
+    statCard(grid, task.active, "active tasks", task.completed + " done");
+    statCard(grid, task.completed, "completed",
+             task.expired ? task.expired + " expired" : null);
+    var lead = task.lead_time_days;
+    statCard(grid, lead == null ? null : "~" + Math.abs(Math.round(lead * 10) / 10) + "d",
+             "lead time",
+             lead == null ? null : (lead > 0 ? "finished early" : "finished late"));
+    head.appendChild(grid);
+
+    // Lead-time callout.
+    var lt = tagPanel(host, "Task lead-time");
+    if (lead != null) {
+      var box = document.createElement("div");
+      box.className = "callout";
+      var big = document.createElement("div");
+      big.className = "callout-big";
+      big.textContent = lead > 0
+        ? "Usually finished ~" + Math.abs(Math.round(lead * 10) / 10) + " days early"
+        : (lead < 0
+          ? "Usually finished ~" + Math.abs(Math.round(lead * 10) / 10) + " days late"
+          : "Usually finished on time");
+      box.appendChild(big);
+      lt.appendChild(box);
+    } else {
+      U.empty(lt, "No completed tasks with a due date for this tag.");
+    }
+
+    // Task timeline.
+    var tl = tagPanel(host, "Task timeline");
+    if ((task.timeline || []).length) {
+      var ul = document.createElement("ul");
+      ul.className = "timeline";
+      task.timeline.forEach(function (r) {
+        var li = document.createElement("li");
+        li.className = "tl-row";
+        var mk = document.createElement("span");
+        mk.className = "tl-mark";
+        mk.appendChild(originTaskMark());
+        li.appendChild(mk);
+        var dt = document.createElement("span");
+        dt.className = "tl-date"; dt.textContent = tagShortDate(r.date);
+        li.appendChild(dt);
+        var tx = document.createElement("span");
+        tx.className = "tl-text";
+        tx.textContent = r.title + " · " + r.status;
+        li.appendChild(tx);
+        ul.appendChild(li);
+      });
+      tl.appendChild(ul);
+    } else {
+      U.empty(tl, "No tasks carry this tag in range.");
+    }
+
+    // Completion throughput for the tag (per-day bars from the timeline).
+    var thr = tagPanel(host, "Completion throughput");
+    var byDay = {};
+    (task.timeline || []).forEach(function (r) {
+      if (r.status === "completed" && r.completed) {
+        var d = r.completed.slice(0, 10);
+        byDay[d] = (byDay[d] || 0) + 1;
+      }
+    });
+    var days = Object.keys(byDay).sort();
+    if (days.length) {
+      var w = 600, h = 160, pad = 28, svg = U.svg(w, h);
+      var max = Math.max.apply(null, days.map(function (d) { return byDay[d]; }));
+      var bw = (w - pad) / days.length;
+      days.forEach(function (d, i) {
+        var bh = (h - pad) * (byDay[d] / max);
+        U.drawBar(svg, pad + i * bw, h - pad - bh, Math.max(bw - 2, 1), bh, c.accent);
+      });
+      thr.appendChild(svg);
+      U.statsRow(thr, [["completions", days.reduce(function (a, d) { return a + byDay[d]; }, 0)]]);
+    } else {
+      U.empty(thr, "No completed tasks for this tag in range.");
+    }
+
+    // Task co-occurrence.
+    var coocRows = (task.cooccurring || []).map(function (x) {
+      return { name: x.name, count: x.count };
+    });
+    tagCoocList(tagPanel(host, "Co-occurring task tags"), coocRows, c, true);
+  }
+
+  function renderTagDetail(host, c) {
+    // Search box + datalist.
+    var searchPanel = tagPanel(host, null);
+    var row = document.createElement("div");
+    row.className = "tag-search-row";
+    var label = document.createElement("label");
+    label.textContent = "tag"; label.setAttribute("for", "tag-search-input");
+    var input = document.createElement("input");
+    input.className = "tag-search"; input.id = "tag-search-input";
+    input.type = "text"; input.placeholder = "search a tag…";
+    input.setAttribute("list", "tag-search-list");
+    input.value = _tagQuery;
+    var list = document.createElement("datalist");
+    list.id = "tag-search-list";
+    allTagNames().forEach(function (n) {
+      var opt = document.createElement("option");
+      opt.value = n; list.appendChild(opt);
+    });
+    row.appendChild(label); row.appendChild(input); row.appendChild(list);
+    searchPanel.appendChild(row);
+
+    var resultsHost = document.createElement("div");
+    resultsHost.className = "tag-detail-results";
+    host.appendChild(resultsHost);
+
+    function run(name) {
+      _tagQuery = (name || "").trim().toLowerCase();
+      resultsHost.innerHTML = "";
+      if (!_tagQuery) {
+        U.empty(resultsHost, "Type or pick a tag above to see its detail.");
+        return;
+      }
+      U.empty(resultsHost, "Loading…");
+      fetchTagOverview(_tagQuery).then(function (payload) {
+        if (_tagQuery !== ((name || "").trim().toLowerCase())) return;  // stale
+        resultsHost.innerHTML = "";
+        var cc = colors();
+        if (_lens === "task") renderTagTask(resultsHost, payload.task || {}, cc);
+        else renderTagJournal(resultsHost, payload.journal || {}, cc);
+      }).catch(function () {
+        resultsHost.innerHTML = "";
+        U.empty(resultsHost, "Could not load this tag.");
+      });
+    }
+
+    var _debounce = null;
+    input.addEventListener("input", function () {
+      clearTimeout(_debounce);
+      var v = input.value;
+      _debounce = setTimeout(function () { run(v); }, 250);
+    });
+    input.addEventListener("change", function () { run(input.value); });
+
+    if (_tagQuery) run(_tagQuery);
+    else U.empty(resultsHost, "Type or pick a tag above to see its detail.");
+  }
+
+  // Fetch /tag/<name>/overview honoring the current date range; cached per
+  // (name, range) so re-renders don't refetch needlessly.
+  function fetchTagOverview(name) {
+    var qs = [];
+    if (_from) qs.push("from=" + encodeURIComponent(_from));
+    if (_to) qs.push("to=" + encodeURIComponent(_to));
+    var key = name + "|" + qs.join("&");
+    if (_tagCache[key]) return Promise.resolve(_tagCache[key]);
+    var url = "/tag/" + encodeURIComponent(name) + "/overview" +
+              (qs.length ? "?" + qs.join("&") : "");
+    return fetch(url, { headers: { "Accept": "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (payload) { _tagCache[key] = payload; return payload; });
+  }
+
   // ----- date filtering -----
   function filterEntries() {
     return _data.entries.filter(function (e) {
@@ -1488,12 +1876,51 @@
     });
   }
 
-  // ----- tabs -----
+  // ----- lens + tabs -----
+  // A tab is visible when: it has no lens (shared, e.g. Overview), OR its lens
+  // list includes the active lens. `needs` further gates on available data.
+  function tabVisible(p) {
+    if (p.lens && p.lens.indexOf(_lens) === -1) return false;
+    if (p.needs && !p.needs()) return false;
+    return true;
+  }
+
+  // The Journal/Task lens toggle. Overview always renders outside it, so the
+  // toggle only swaps the deeper tab set. Switching lens keeps the active tab
+  // if it is still valid under the new lens, else falls back to Overview.
+  function buildLensToggle() {
+    var host = root.querySelector(".analytics-lens");
+    if (!host) return;
+    host.innerHTML = "";
+    [["journal", "Journal"], ["task", "Task"]].forEach(function (pair) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "analytics-lens-btn" + (pair[0] === _lens ? " active" : "");
+      btn.textContent = pair[1];
+      btn.dataset.lens = pair[0];
+      btn.addEventListener("click", function () { switchLens(pair[0]); });
+      host.appendChild(btn);
+    });
+  }
+
+  function switchLens(lens) {
+    if (lens === _lens) return;
+    _lens = lens;
+    // Keep the active tab if it survives the lens switch; else go to Overview.
+    var stay = PANELS.some(function (p) {
+      return p.id === _activeTab && tabVisible(p);
+    });
+    if (!stay) _activeTab = "overview";
+    buildLensToggle();
+    buildTabs();
+    renderActivePanel();
+  }
+
   function buildTabs() {
     var bar = root.querySelector(".analytics-tabs");
     bar.innerHTML = "";
     PANELS.forEach(function (p) {
-      if (p.needs && !p.needs()) return;
+      if (!tabVisible(p)) return;
       var btn = document.createElement("button");
       btn.className = "analytics-tab" + (p.id === _activeTab ? " active" : "");
       btn.textContent = p.label;
@@ -1502,9 +1929,7 @@
       bar.appendChild(btn);
     });
     // If the active tab got hidden (e.g. numeric data removed), fall back.
-    if (!PANELS.some(function (p) {
-      return p.id === _activeTab && (!p.needs || p.needs());
-    })) {
+    if (!PANELS.some(function (p) { return p.id === _activeTab && tabVisible(p); })) {
       _activeTab = "overview";
     }
   }
@@ -1523,6 +1948,13 @@
     host.innerHTML = "";
     var entries = filterEntries();
     var c = colors();
+
+    // The Tag detail tab has bespoke interaction, so it bypasses the CHARTS loop.
+    if (_activeTab === "tag") {
+      renderTagDetail(host, c);
+      return;
+    }
+
     var charts = CHARTS.filter(function (ch) { return ch.panel === _activeTab; });
 
     if (!charts.length) {
@@ -1546,7 +1978,17 @@
     });
   }
 
+  // Read #tag=<name> from the URL hash: open the Tag tab pre-searched.
+  function readTagHash() {
+    var m = /(?:^|[#&])tag=([^&]+)/.exec(window.location.hash || "");
+    if (m) {
+      _tagQuery = decodeURIComponent(m[1]).trim().toLowerCase();
+      _activeTab = "tag";
+    }
+  }
+
   // ----- data load -----
+  var _firstLoad = true;
   function applyData(payload) {
     _data = payload || _data;
     var loading = document.getElementById("analytics-loading");
@@ -1560,7 +2002,9 @@
       fromEl.value = _from || "";
       toEl.value = _to || "";
     }
+    if (_firstLoad) { readTagHash(); _firstLoad = false; }
     syncDateLabels();
+    buildLensToggle();
     buildTabs();
     renderActivePanel();
   }
@@ -1580,15 +2024,18 @@
   // ----- wiring -----
   document.getElementById("date-from").addEventListener("change", function (e) {
     _from = e.target.value || null;
+    _tagCache = {};   // range changed -> the Tag tab must refetch
     renderActivePanel();
   });
   document.getElementById("date-to").addEventListener("change", function (e) {
     _to = e.target.value || null;
+    _tagCache = {};
     renderActivePanel();
   });
   document.getElementById("date-reset").addEventListener("click", function () {
     _from = _data.date_range.min;
     _to = _data.date_range.max;
+    _tagCache = {};
     document.getElementById("date-from").value = _from || "";
     document.getElementById("date-to").value = _to || "";
     syncDateLabels();

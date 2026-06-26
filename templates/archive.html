@@ -28,17 +28,19 @@
           {% set has_details = notes or subtasks %}
           {% set done_count = subtasks | selectattr("done") | list | length %}
           {% if tags %}
-            {# First tag drives the title highlight; extra tags become chips --
-               exactly like the active page. #}
+            {# First tag drives the title highlight as a color cue; EVERY tag
+               (including the first) is also rendered as a named, clickable
+               .tag-pop-trigger chip that opens the unified tag popover. #}
             {% set hl = tag_color(data, tags[0]) %}
             <span class="title task-title-toggle" data-task-id="{{ task.id }}"
                   role="button" tabindex="0"><span class="title-highlight"
                   style="--tag-bg: {{ hl }};">{{ task.title }}</span>{% if has_details %}<span
                   class="detail-hint">&hellip;</span>{% endif %}{% if subtasks %}<span
                   class="subtask-progress">{{ done_count }}/{{ subtasks | length }}</span>{% endif %}</span>
-            {% for name in tags[1:] %}
+            {% for name in tags %}
               {% set c = tag_color(data, name) %}
-              <span class="tag-chip"
+              <span class="tag-chip tag-pop-trigger" data-tagpop="{{ name }}"
+                    role="button" tabindex="0"
                     style="--tag-bg: {{ c }}; --tag-fg: {{ text_color_for(c) }};">{{ name }}</span>
             {% endfor %}
           {% else %}
